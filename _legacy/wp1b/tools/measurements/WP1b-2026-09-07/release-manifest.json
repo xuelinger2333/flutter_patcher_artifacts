@@ -1,0 +1,40 @@
+{
+  "builder_repo_commit": "dc326fad2bccaccc2d608c63f0d3a570c64ec367",
+  "dart_sdk_commit": "60a57cd42d64dc03e9f07aa60a2e250755c1ef28",
+  "dart_version": "3.13.2",
+  "engine_commit": "a804b261645ef8c13eb3d5c44a5c2fb0340c5539",
+  "files": [
+    {
+      "name": "flutter_patcher_kernel_tools-3.47.2.dill",
+      "role": "kernel_tools",
+      "sha256": "222d37ded5416bb40c0f6eba4b9596ae093835ae6570c35d4ad27a66b6c06bcf",
+      "size": 13617672
+    },
+    {
+      "name": "dart2bytecode-patched-3.47.2.dill",
+      "role": "dart2bytecode",
+      "sha256": "9e28edc45bdeda7b83ba16473bdc5b0ded497573cee5af052c3f8e2bd730870c",
+      "size": 36986640
+    },
+    {
+      "name": "protocol_interface-3.47.2.yaml",
+      "role": "protocol_interface",
+      "sha256": "a09f983b92bad88a54b7bd068f86545378b4452c1d7d2b4793995d3dbccde7c5",
+      "size": 5657
+    },
+    {
+      "name": "platform_privates-3.47.2.yaml",
+      "role": "platform_privates",
+      "sha256": "f6eddadadf888184d15a7ba593d92a6bb981a64759125ad848f0913791275807",
+      "size": 1698340
+    }
+  ],
+  "flutter_version": "3.47.2",
+  "patches": [
+    {
+      "file": "0001-dart2bytecode-tfa.patch",
+      "sha256": "4ece08aa40cd06d6b6ffd90ccd3ba7516f72e360fff19876e506815a7774c056"
+    }
+  ],
+  "schema": 1
+}

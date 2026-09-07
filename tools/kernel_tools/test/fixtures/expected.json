@@ -1,0 +1,11 @@
+[
+  {"name":"shape1", "verdict":"INJECTABLE", "injection_points":1, "bypasses":0},
+  {"name":"shape2", "verdict":"INJECTABLE", "injection_points":1, "bypasses":0},
+  {"name":"shape3", "verdict":"INJECTABLE", "injection_points":1, "bypasses":0},
+  {"name":"shape4", "verdict":"INJECTABLE", "injection_points":2, "bypasses":0},
+  {"name":"shape5", "verdict":"INJECTABLE", "injection_points":1, "bypasses":0},
+  {"name":"shape6", "verdict":"INJECTABLE", "injection_points":1, "bypasses":0},
+  {"name":"shape7", "verdict":"INJECTABLE_HOLE", "injection_points":1, "bypasses":1},
+  {"name":"shape8", "verdict":"INJECTABLE", "injection_points":1, "bypasses":0},
+  {"name":"shape9", "verdict":"UPGRADE", "injection_points":0, "bypasses":0}
+]

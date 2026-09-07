@@ -1,0 +1,115 @@
+# Flutter extension protocol definitions, derived from E1.
+extendable:
+  - library: 'package:flutter/src/widgets/framework.dart'
+    class: ['Widget', 'StatelessWidget', 'StatefulWidget', 'State',
+            'ProxyWidget', 'ParentDataWidget', 'InheritedWidget',
+            'RenderObjectWidget', 'LeafRenderObjectWidget',
+            'SingleChildRenderObjectWidget', 'MultiChildRenderObjectWidget',
+            'Element', 'ComponentElement', 'StatelessElement',
+            'StatefulElement', 'ProxyElement', 'InheritedElement',
+            'RenderObjectElement', 'LeafRenderObjectElement',
+            'SingleChildRenderObjectElement', 'MultiChildRenderObjectElement']
+  - library: 'package:flutter/src/rendering/object.dart'
+    class: ['RenderObject', 'ParentData', 'Constraints',
+            'RenderObjectWithChildMixin', 'ContainerParentDataMixin',
+            'ContainerRenderObjectMixin']
+  - library: 'package:flutter/src/rendering/box.dart'
+    class: ['RenderBox', 'BoxParentData', 'ContainerBoxParentData',
+            'BoxConstraints', 'RenderBoxContainerDefaultsMixin']
+  - library: 'package:flutter/src/foundation/key.dart'
+    class: ['Key', 'LocalKey']
+  - library: 'package:flutter/src/animation/tween.dart'
+    class: ['Tween', 'Animatable']
+  - library: 'package:flutter/src/animation/curves.dart'
+    class: ['Curve', 'ParametricCurve']
+  - library: 'package:flutter/src/animation/animation.dart'
+    class: ['Animation']
+  - library: 'package:flutter/src/widgets/ticker_provider.dart'
+    class: ['SingleTickerProviderStateMixin', 'TickerProviderStateMixin']
+  - library: 'package:flutter/src/gestures/recognizer.dart'
+    class: ['GestureRecognizer', 'OneSequenceGestureRecognizer',
+            'PrimaryPointerGestureRecognizer']
+
+can-be-overridden:
+  - library: 'package:flutter/src/widgets/framework.dart'
+    class: ['Widget', 'StatelessWidget', 'StatefulWidget', 'State',
+            'ProxyWidget', 'ParentDataWidget', 'InheritedWidget',
+            'RenderObjectWidget', 'LeafRenderObjectWidget',
+            'SingleChildRenderObjectWidget', 'MultiChildRenderObjectWidget',
+            'Element', 'ComponentElement', 'ProxyElement',
+            'InheritedElement', 'RenderObjectElement']
+  - library: 'package:flutter/src/rendering/object.dart'
+    class: ['RenderObject', 'ParentData', 'Constraints']
+  - library: 'package:flutter/src/rendering/box.dart'
+    class: ['RenderBox', 'BoxParentData']
+  - library: 'package:flutter/src/animation/tween.dart'
+    class: ['Tween', 'Animatable']
+  - library: 'package:flutter/src/animation/curves.dart'
+    class: ['Curve', 'ParametricCurve']
+  - library: 'package:flutter/src/gestures/recognizer.dart'
+    class: ['GestureRecognizer', 'OneSequenceGestureRecognizer',
+            'PrimaryPointerGestureRecognizer']
+
+can-be-used-as-type:
+  - library: 'package:flutter/src/widgets/framework.dart'
+    class: ['Widget', 'BuildContext', 'BuildOwner', 'StatelessWidget',
+            'StatefulWidget', 'State', 'Element', 'InheritedWidget',
+            'RenderObjectWidget', 'RenderObjectElement', 'ProxyWidget',
+            'ParentDataWidget']
+  - library: 'package:flutter/src/rendering/object.dart'
+    class: ['RenderObject', 'ParentData', 'Constraints', 'PaintingContext',
+            'PipelineOwner']
+  - library: 'package:flutter/src/rendering/box.dart'
+    class: ['RenderBox', 'BoxConstraints', 'BoxParentData',
+            'BoxHitTestResult', 'BoxHitTestEntry']
+  - library: 'package:flutter/src/foundation/key.dart'
+    class: ['Key', 'LocalKey', 'UniqueKey', 'ValueKey']
+  - library: 'package:flutter/src/animation/animation.dart'
+    class: ['Animation']
+  - library: 'package:flutter/src/animation/tween.dart'
+    class: ['Tween', 'Animatable']
+  - library: 'package:flutter/src/animation/curves.dart'
+    class: ['Curve', 'ParametricCurve']
+  - library: 'package:flutter/src/animation/animation_controller.dart'
+    class: ['AnimationController']
+  - library: 'package:flutter/src/gestures/recognizer.dart'
+    class: ['GestureRecognizer', 'OneSequenceGestureRecognizer',
+            'PrimaryPointerGestureRecognizer']
+
+callable:
+  - library: 'package:flutter/src/widgets/framework.dart'
+    class: ['Widget', 'StatelessWidget', 'StatefulWidget', 'State',
+            'BuildContext', 'BuildOwner', 'Element', 'ComponentElement',
+            'InheritedWidget', 'InheritedElement', 'RenderObjectWidget',
+            'LeafRenderObjectWidget', 'SingleChildRenderObjectWidget',
+            'MultiChildRenderObjectWidget', 'RenderObjectElement',
+            'LeafRenderObjectElement', 'SingleChildRenderObjectElement',
+            'MultiChildRenderObjectElement', 'ProxyWidget', 'ProxyElement',
+            'ParentDataWidget', 'ParentDataElement', 'GlobalKey',
+            'LabeledGlobalKey', 'ObjectKey']
+  - library: 'package:flutter/src/rendering/object.dart'
+    class: ['RenderObject', 'ParentData', 'Constraints', 'PaintingContext',
+            'PipelineOwner', 'RenderObjectWithChildMixin',
+            'ContainerRenderObjectMixin', 'ContainerParentDataMixin']
+  - library: 'package:flutter/src/rendering/box.dart'
+    class: ['RenderBox', 'BoxConstraints', 'BoxParentData',
+            'ContainerBoxParentData', 'BoxHitTestResult', 'BoxHitTestEntry',
+            'RenderBoxContainerDefaultsMixin']
+  - library: 'package:flutter/src/foundation/key.dart'
+    class: ['Key', 'LocalKey', 'UniqueKey', 'ValueKey']
+  - library: 'package:flutter/src/animation/animation.dart'
+    class: ['Animation']
+  - library: 'package:flutter/src/animation/animation_controller.dart'
+    class: ['AnimationController']
+  - library: 'package:flutter/src/animation/tween.dart'
+    class: ['Tween', 'Animatable', 'ColorTween', 'SizeTween', 'RectTween',
+            'IntTween', 'CurveTween', 'ConstantTween']
+  - library: 'package:flutter/src/animation/curves.dart'
+    class: ['Curve', 'ParametricCurve', 'Curves', 'Cubic', 'Interval',
+            'FlippedCurve']
+  - library: 'package:flutter/src/widgets/ticker_provider.dart'
+    class: ['SingleTickerProviderStateMixin', 'TickerProviderStateMixin',
+            'TickerMode']
+  - library: 'package:flutter/src/gestures/recognizer.dart'
+    class: ['GestureRecognizer', 'OneSequenceGestureRecognizer',
+            'PrimaryPointerGestureRecognizer', 'OffsetPair']

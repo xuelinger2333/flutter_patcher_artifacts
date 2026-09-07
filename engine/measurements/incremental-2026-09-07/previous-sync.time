@@ -1,0 +1,23 @@
+	Command being timed: "bash /root/.flutter_patcher/wp1/repository/scripts/fetch_engine.sh 5d531788691ec3404cac0cee66ead4007b177363"
+	User time (seconds): 212.54
+	System time (seconds): 29.45
+	Percent of CPU this job got: 111%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 3:36.78
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 1788356
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 297
+	Minor (reclaiming a frame) page faults: 1605379
+	Voluntary context switches: 1255387
+	Involuntary context switches: 90649
+	Swaps: 0
+	File system inputs: 67144
+	File system outputs: 7518008
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0

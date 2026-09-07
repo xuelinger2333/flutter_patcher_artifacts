@@ -1,0 +1,3 @@
+out/android_release_arm64/lib.stripped/libflutter.so 11908208
+out/android_release_arm64/flutter_embedding_release.jar 1584072
+out/android_release_arm64/clang_x64/gen_snapshot 6295056

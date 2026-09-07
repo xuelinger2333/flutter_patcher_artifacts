@@ -1,0 +1,110 @@
+diff --git a/pkg/dart2bytecode/lib/bytecode_generator.dart b/pkg/dart2bytecode/lib/bytecode_generator.dart
+index 0406c39cf7d2db1358c9be480432756a90665c7e..ca21aad46f132834117d320c540133017fb8ae13 100644
+--- a/pkg/dart2bytecode/lib/bytecode_generator.dart
++++ b/pkg/dart2bytecode/lib/bytecode_generator.dart
+@@ -4333,6 +4333,12 @@ class BytecodeGenerator extends RecursiveVisitor {
+     asm.bind(done);
+   }
+ 
++  @override
++  void visitFileUriExpression(FileUriExpression node) {
++    // Only carries file attribution for code TFA relocated; transparent here.
++    _generateNode(node.expression);
++  }
++
+   @override
+   void visitBlockExpression(BlockExpression node) {
+     _enterScope(node);
+diff --git a/pkg/dart2bytecode/lib/dart2bytecode.dart b/pkg/dart2bytecode/lib/dart2bytecode.dart
+index bc8b0591354fd447cf925de462beb5272945b0d4..85ff86e4e517508b5a1da398413fc239cd82701e 100644
+--- a/pkg/dart2bytecode/lib/dart2bytecode.dart
++++ b/pkg/dart2bytecode/lib/dart2bytecode.dart
+@@ -153,6 +153,17 @@ final ArgParser _argParser = ArgParser(allowTrailingOptions: true)
+     help:
+         'Selector names that weren\'t exposed by the host, but are allowed in '
+         'dynamic calls within the dynamic module',
++  )
++  ..addFlag(
++    'tfa',
++    help: 'F4: run the AOT global transformations including type flow '
++        'analysis and its tree shaking.',
++    defaultsTo: false,
++  )
++  ..addFlag(
++    'aot-only',
++    help: 'F4: run the AOT global transformations without type flow analysis.',
++    defaultsTo: false,
+   );
+ 
+ final String _usage =
+@@ -193,6 +204,8 @@ Future<int> runCompilerWithCommandLineArguments(List<String> arguments) async {
+   final String? depfileTarget = options['depfile-target'];
+   final List<String>? fileSystemRoots = options['filesystem-root'];
+   final bool enableAsserts = options['enable-asserts'];
++  final bool tfa = options['tfa'];
++  final bool aotOnly = options['aot-only'];
+   final List<String>? experimentalFlags = options['enable-experiment'];
+   final Map<String, String> environmentDefines = {};
+ 
+@@ -234,6 +247,8 @@ Future<int> runCompilerWithCommandLineArguments(List<String> arguments) async {
+     libraryUrisPrefix: libraryUrisPrefix,
+     allowDynamicCallsInDynamicModules: allowDynamicCallsInDynamicModules,
+     dynamicCallsSelectorAllowList: dynamicCallsSelectorAllowList,
++    tfa: tfa,
++    aotOnly: aotOnly,
+   );
+ }
+ 
+@@ -248,6 +263,8 @@ Future<int> runCompilerWithOptions({
+   String? importDill,
+   String? validateDynamicInterface,
+   bool enableAsserts = false,
++  bool tfa = false,
++  bool aotOnly = false,
+   List<String>? experimentalFlags,
+   Map<String, String> environmentDefines = const {},
+   String? fileSystemScheme,
+@@ -334,6 +351,15 @@ Future<int> runCompilerWithOptions({
+       includePlatform: false,
+       environmentDefines: Map.of(environmentDefines),
+       enableAsserts: enableAsserts,
++      aot: tfa || aotOnly,
++      useGlobalTypeFlowAnalysis: tfa,
++      treeShakeWriteOnlyFields: tfa,
++      // Without this the annotator never runs, TFA sees no roots beyond the
++      // entry point, and it shakes the platform libraries too -- which the
++      // host provides and the bytecode generator assumes are complete.
++      dynamicInterface: (tfa || aotOnly)
++          ? dynamicInterfaceSpecificationUri
++          : null,
+     ),
+   );
+ 
+diff --git a/pkg/vm/lib/kernel_front_end.dart b/pkg/vm/lib/kernel_front_end.dart
+index 245aa6a86a905389913346396fe28cd615530878..43c7b288082716b0e13a69316b47d75e8fb814bb 100644
+--- a/pkg/vm/lib/kernel_front_end.dart
++++ b/pkg/vm/lib/kernel_front_end.dart
+@@ -828,7 +828,9 @@ Future runGlobalTransformations(
+       target,
+       coreTypes,
+       component,
+-      treeShakeSignatures: !args.minimalKernel,
++      // F4: TFA signature shaking rewrites call-site argument descriptors, but a
++      // dynamic module calls into a host whose signatures did not change.
++      treeShakeSignatures: false,
+       treeShakeWriteOnlyFields: args.treeShakeWriteOnlyFields,
+       treeShakeProtobufs: args.useProtobufTreeShakerV2,
+       treeShakeProtobufMixins: args.protobufTreeShakerMixins,
+@@ -863,7 +865,11 @@ Future runGlobalTransformations(
+     args.keepClassNamesImplementing,
+   );
+ 
+-  deferred_loading.transformComponent(component, coreTypes, target);
++  // A dynamic module has no main, and deferred_loading roots its graph at
++  // component.mainMethod. Loading units only matter to split AOT output.
++  if (component.mainMethod != null) {
++    deferred_loading.transformComponent(component, coreTypes, target);
++  }
+ 
+   final recordedUsagesFile = args.recordedUsages;
+   if (recordedUsagesFile != null) {

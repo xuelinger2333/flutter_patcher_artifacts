@@ -1,0 +1,10 @@
+{
+  "a11": "passed",
+  "builder_repo_commit": "dc326fad2bccaccc2d608c63f0d3a570c64ec367",
+  "dart2bytecode_compilation": "passed_aot_only_and_tfa",
+  "dart2bytecode_help": "passed",
+  "elapsed_seconds": 113.23,
+  "flutter_version": "3.47.2",
+  "kernel_tools_help": "passed",
+  "snapshot_smoke": "passed_9_of_9"
+}

@@ -1,0 +1,209 @@
+#!/usr/bin/env python3
+"""WP-1b: build stock-Dart tools twice, smoke-test, and enforce A11."""
+import argparse
+import os
+from pathlib import Path
+import re
+import shutil
+import subprocess
+import sys
+import time
+
+from tools_artifacts import compare, create, names, read_json, require, sha256, write_json
+
+REPO = Path(__file__).resolve().parents[2]
+SDK_PACKAGES = ('kernel', 'front_end', '_fe_analyzer_shared', 'vm', 'dart2bytecode', 'build_integration')
+
+
+def run(*args, cwd=None, capture=False):
+    print('+', *map(str, args), flush=True)
+    result = subprocess.run(list(map(str, args)), cwd=cwd, text=True,
+                            stdout=subprocess.PIPE if capture else None)
+    if result.returncode:
+        if result.stdout:
+            print(result.stdout, flush=True)
+        raise RuntimeError(f'Command failed ({result.returncode}): {args[0]}')
+    return result.stdout.strip() if capture else None
+
+
+def git(*args, cwd=REPO):
+    return run('git', *args, cwd=cwd, capture=True)
+
+
+def source_overrides(source, sdk):
+    overrides = {}
+    for name in SDK_PACKAGES:
+        package = sdk / 'pkg' / name
+        require((package / 'pubspec.yaml').is_file(), f'SDK package missing: {name}')
+        # Official pub escape hatch: keep dependency packages out of the SDK's
+        # development workspace without editing any upstream tracked source.
+        (package / 'pubspec_overrides.yaml').write_text('resolution:\nworkspace: []\n')
+        overrides[name] = {'path': os.path.relpath(package, source / 'tools/kernel_tools').replace(os.sep, '/')}
+    write_json(source / 'tools/kernel_tools/pubspec_overrides.yaml', {'dependency_overrides': overrides})
+
+
+def compile_fixtures(flutter, source):
+    fixtures = source / 'tools/kernel_tools/test/fixtures'
+    shutil.copytree(fixtures / 'shapes', fixtures / 'lib')
+    run(flutter / 'bin/flutter', '--suppress-analytics', 'pub', 'get', cwd=fixtures)
+    platform = flutter / 'bin/cache/artifacts/engine/common/flutter_patched_sdk_product'
+    frontend = flutter / 'bin/cache/artifacts/engine/linux-x64/frontend_server_aot.dart.snapshot'
+    output = fixtures / '.dart_tool/flutter_patcher'
+    output.mkdir(parents=True)
+    for i in range(1, 10):
+        run(flutter / 'bin/cache/dart-sdk/bin/dartaotruntime', frontend,
+            '--sdk-root', str(platform) + '/', '--target', 'flutter',
+            '--no-aot', '--no-tfa', '--link-platform',
+            '--packages', fixtures / '.dart_tool/package_config.json',
+            '--output-dill', output / f'shape{i}.dill',
+            f'package:wp1b_shapes/shape{i}.dart', cwd=fixtures)
+        require((output / f'shape{i}.dill').is_file(), f'Fixture {i} not compiled')
+    return output
+
+
+def check_compiler_help(help_text):
+    require('--[no-]tfa' in help_text and '--[no-]aot-only' in help_text, 'Patched compiler flags missing')
+
+
+def smoke(dart, release, version, fixtures, answers):
+    outputs = names(version)
+    help_text = run(dart, release / outputs['tools'], '--help', capture=True)
+    require('detect-shape' in help_text, 'kernel-tools --help failed')
+    help_text = run(dart, release / outputs['tools'], 'bytecode', '--help', capture=True)
+    check_compiler_help(help_text)
+    results = []
+    import json
+    for case in answers:
+        text = run(dart, release / outputs['tools'], 'detect-shape',
+                   '--dill', fixtures / (case['name'] + '.dill'), '--own', 'wp1b_shapes',
+                   '--exclude', 'f6_overlay.dart', capture=True)
+        result = json.loads(text)
+        require(result['verdict'] == case['verdict'], f"Wrong verdict: {case['name']}")
+        require(len(result['injectionPoints']) == case['injection_points'], f"Wrong injection count: {case['name']}")
+        require(len(result['bypasses']) == case['bypasses'], f"Wrong bypass count: {case['name']}")
+        results.append({'name': case['name'], **result})
+    return results
+
+
+def compiler_smoke(dart, release, version, source, flutter, work):
+    # A real no-main dynamic module exercises the F4 compiler path, beyond help.
+    import json
+    interface = work / 'compiler-interface.yaml'
+    libraries = ['dart:core', 'dart:async', 'dart:collection', 'dart:convert',
+                 'dart:io', 'dart:math', 'dart:typed_data', 'dart:isolate',
+                 'dart:developer', 'dart:ffi', 'dart:_internal', 'dart:ui']
+    interface.write_text(json.dumps({section: [{'library': lib} for lib in libraries]
+                          for section in ['callable', 'extendable', 'can-be-overridden', 'can-be-used-as-type']}))
+    for flag in ('--aot-only', '--tfa'):
+        output = work / (flag[2:] + '.bytecode')
+        run(dart, release / names(version)['tools'], 'bytecode',
+            '--platform', flutter / 'bin/cache/artifacts/engine/common/flutter_patched_sdk_product/platform_strong.dill',
+            '--target', 'flutter', '--validate', interface, flag, '-o', output,
+            source / 'tools/kernel_tools/test/fixtures/compiler_module.dart')
+        require(output.is_file() and output.stat().st_size > 0, 'Compiler smoke produced no bytecode')
+
+
+def transform_smoke(dart, release, version, fixtures, work):
+    import json
+    snapshot = release / names(version)['tools']
+    for index, count, verdict in ((4, 2, 'INJECTABLE'), (7, 1, 'INJECTABLE_HOLE')):
+        output = work / f'transformed-shape{index}.dill'
+        result = json.loads(run(dart, snapshot, 'transform-overlay', '--dill', fixtures / f'shape{index}.dill',
+                            '--own', 'wp1b_shapes', '--out', output,
+                            '--helper-lib', 'package:wp1b_shapes/f6_overlay.dart',
+                            '--helper-fn', 'patcherOverlayBundle', capture=True))
+        require(result == {'wrapped': count}, 'Wrong transformed injection count')
+        result = json.loads(run(dart, snapshot, 'detect-shape', '--dill', output, '--own', 'wp1b_shapes',
+                                '--exclude', 'f6_overlay.dart', capture=True))
+        require(result['verdict'] == verdict, 'Transformation changed resource-bypass classification')
+
+
+def build(args):
+    require(sys.platform == 'linux', 'WP-1b build requires Linux')
+    versions = (REPO / 'supported_versions.txt').read_text().splitlines()
+    require(args.version in versions, 'Unsupported Flutter version')
+    pin = read_json(REPO / 'tools/versions.json')[args.version]
+    require(not git('status', '--porcelain', '--untracked-files=normal'), 'Commit source changes before building')
+    commit = git('rev-parse', 'HEAD')
+    flutter = args.flutter.resolve()
+    managed = Path.home() / '.flutter_patcher'
+    require(flutter.is_relative_to(managed.resolve()), 'Use a managed stock Flutter under ~/.flutter_patcher')
+    work, output = args.work.resolve(), args.out.resolve()
+    require(work.is_relative_to(managed.resolve()) or work.is_relative_to(REPO / '.dart_tool/flutter_patcher'),
+            'Work must be under ~/.flutter_patcher or repository .dart_tool/flutter_patcher')
+    require(not work.exists() and not output.exists(), 'Work and output must be new directories')
+    require(not output.is_relative_to(work), 'Keep --out outside the work directory')
+    work.mkdir(parents=True)
+    os.environ['PUB_CACHE'] = str(work / 'pub-cache')
+    start = time.monotonic()
+    metadata = read_flutter(flutter)
+    require(metadata['frameworkVersion'] == args.version, 'Flutter version mismatch')
+    require(metadata['engineRevision'] == pin['engine_commit'], 'Flutter engine mismatch')
+    require(metadata['dartSdkVersion'].split()[0] == pin['dart_version'], 'Dart version mismatch')
+    require((flutter / 'bin/internal/engine.version').read_text().strip() == pin['engine_commit'], 'engine.version mismatch')
+    source = work / 'source'
+    source.mkdir()
+    for name in ('tools',):
+        shutil.copytree(REPO / name, source / name, ignore=shutil.ignore_patterns('__pycache__', '.dart_tool'))
+    sdk = work / 'dart-sdk'
+    run('git', 'clone', '--depth', '1', '--branch', pin['dart_version'], 'https://github.com/dart-lang/sdk.git', sdk)
+    require(git('rev-parse', 'HEAD', cwd=sdk) == pin['dart_commit'], 'Dart tag commit drift')
+    patches = sorted((source / 'tools/dart2bytecode_patches').glob('*.patch'))
+    require(bool(patches), 'Missing reviewed tool patch')
+    for patch in patches:
+        run('git', 'apply', '--check', patch, cwd=sdk)
+        run('git', 'apply', patch, cwd=sdk)
+    expected_diff = git('diff', '--full-index', '--binary', cwd=sdk)
+    source_overrides(source, sdk)
+    package = source / 'tools/kernel_tools'
+    shutil.copyfile(source / f'tools/locks/{args.version}.lock', package / 'pubspec.lock')
+    dart = flutter / 'bin/cache/dart-sdk/bin/dart'
+    run(dart, 'pub', 'get', '--enforce-lockfile', cwd=package)
+    config = package / '.dart_tool/package_config.json'
+    run(dart, f'--packages={config}', package / 'test/detect_shape_test.dart', cwd=package)
+    run(flutter / 'bin/flutter', '--suppress-analytics', 'precache', '--android')
+    fixtures = compile_fixtures(flutter, source)
+    answers = read_json(package / 'test/fixtures/expected.json')
+    require(len(answers) == 9, 'Nine fixture answers required')
+    patches_record = [{'file': p.name, 'sha256': sha256(p)} for p in patches]
+    run(sys.executable, REPO / 'tools/generators/protocol_set/embed_definitions.py', '--check')
+    for attempt in ('first', 'second'):
+        release = work / attempt
+        release.mkdir()
+        files = names(args.version)
+        run(dart, 'compile', 'kernel', 'bin/main.dart', '-o', release / files['tools'], cwd=package)
+        # Generator smoke outputs are build evidence, never release assets.
+        run(dart, release / files['tools'], 'gen-protocol-interface',
+            '--dill', fixtures / 'shape1.dill', '--out', work / f'{attempt}-protocol.yaml')
+        run(dart, release / files['tools'], 'gen-platform-privates',
+            '--platform', flutter / 'bin/cache/artifacts/engine/common/flutter_patched_sdk_product/platform_strong.dill',
+            '--out', work / f'{attempt}-privates.yaml')
+        results = smoke(dart, release, args.version, fixtures, answers)
+        write_json(work / f'{attempt}-smoke.json', results)
+        create(release, args.version, metadata, commit, pin['dart_commit'], patches_record)
+    compare(work / 'first', work / 'second')
+    transform_smoke(dart, work / 'first', args.version, fixtures, work)
+    compiler_smoke(dart, work / 'first', args.version, source, flutter, work)
+    require(git('diff', '--full-index', '--binary', cwd=sdk) == expected_diff, 'Dart source changed during build')
+    require(git('rev-parse', 'HEAD') == commit and not git('status', '--porcelain'), 'Builder source changed during build')
+    elapsed = round(time.monotonic() - start, 2)
+    write_json(work / 'verification.json', {'a11': 'passed', 'snapshot_smoke': 'passed_9_of_9',
+               'kernel_tools_help': 'passed', 'dart2bytecode_help': 'passed',
+               'dart2bytecode_compilation': 'passed_aot_only_and_tfa', 'elapsed_seconds': elapsed,
+               'builder_repo_commit': commit, 'flutter_version': args.version})
+    shutil.copytree(work / 'first', output)
+    print(f'TOOLS_RELEASE_READY: {output}; A11 passed; {elapsed} seconds', flush=True)
+
+
+def read_flutter(flutter):
+    import json
+    return json.loads(run(flutter / 'bin/flutter', '--suppress-analytics', '--version', '--machine', capture=True))
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('version')
+    parser.add_argument('--flutter', required=True, type=Path)
+    parser.add_argument('--work', required=True, type=Path)
+    parser.add_argument('--out', required=True, type=Path)
+    build(parser.parse_args())

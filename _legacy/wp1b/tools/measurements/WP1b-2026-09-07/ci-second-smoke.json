@@ -1,0 +1,186 @@
+[
+  {
+    "bypasses": [],
+    "injectionPoints": [
+      {
+        "col": 16,
+        "file": "shape1.dart",
+        "kind": "inject",
+        "library": "package:wp1b_shapes/shape1.dart",
+        "line": 5,
+        "member": "main",
+        "name": "runApp",
+        "offset": 112
+      }
+    ],
+    "name": "shape1",
+    "tearOffs": [],
+    "verdict": "INJECTABLE"
+  },
+  {
+    "bypasses": [],
+    "injectionPoints": [
+      {
+        "col": 3,
+        "file": "shape2.dart",
+        "kind": "inject",
+        "library": "package:wp1b_shapes/shape2.dart",
+        "line": 8,
+        "member": "main",
+        "name": "runApp",
+        "offset": 247
+      }
+    ],
+    "name": "shape2",
+    "tearOffs": [],
+    "verdict": "INJECTABLE"
+  },
+  {
+    "bypasses": [],
+    "injectionPoints": [
+      {
+        "col": 3,
+        "file": "shape3.dart",
+        "kind": "inject",
+        "library": "package:wp1b_shapes/shape3.dart",
+        "line": 8,
+        "member": "bootstrap",
+        "name": "runApp",
+        "offset": 145
+      }
+    ],
+    "name": "shape3",
+    "tearOffs": [],
+    "verdict": "INJECTABLE"
+  },
+  {
+    "bypasses": [],
+    "injectionPoints": [
+      {
+        "col": 5,
+        "file": "shape4.dart",
+        "kind": "inject",
+        "library": "package:wp1b_shapes/shape4.dart",
+        "line": 7,
+        "member": "main",
+        "name": "runApp",
+        "offset": 149
+      },
+      {
+        "col": 5,
+        "file": "shape4.dart",
+        "kind": "inject",
+        "library": "package:wp1b_shapes/shape4.dart",
+        "line": 9,
+        "member": "main",
+        "name": "runApp",
+        "offset": 198
+      }
+    ],
+    "name": "shape4",
+    "tearOffs": [],
+    "verdict": "INJECTABLE"
+  },
+  {
+    "bypasses": [],
+    "injectionPoints": [
+      {
+        "col": 3,
+        "file": "shape5.dart",
+        "kind": "inject",
+        "library": "package:wp1b_shapes/shape5.dart",
+        "line": 7,
+        "member": "main",
+        "name": "runWidget",
+        "offset": 183
+      }
+    ],
+    "name": "shape5",
+    "tearOffs": [],
+    "verdict": "INJECTABLE"
+  },
+  {
+    "bypasses": [],
+    "injectionPoints": [
+      {
+        "col": 3,
+        "file": "shape6.dart",
+        "kind": "inject",
+        "library": "package:wp1b_shapes/shape6.dart",
+        "line": 26,
+        "member": "main",
+        "name": "runApp",
+        "offset": 560
+      }
+    ],
+    "name": "shape6",
+    "tearOffs": [],
+    "verdict": "INJECTABLE"
+  },
+  {
+    "bypasses": [
+      {
+        "col": 28,
+        "file": "shape7.dart",
+        "kind": "rootBundle",
+        "library": "package:wp1b_shapes/shape7.dart",
+        "line": 8,
+        "member": "main",
+        "name": "rootBundle",
+        "offset": 237,
+        "timing": "before"
+      }
+    ],
+    "injectionPoints": [
+      {
+        "col": 3,
+        "file": "shape7.dart",
+        "kind": "inject",
+        "library": "package:wp1b_shapes/shape7.dart",
+        "line": 9,
+        "member": "main",
+        "name": "runApp",
+        "offset": 282
+      }
+    ],
+    "name": "shape7",
+    "tearOffs": [],
+    "verdict": "INJECTABLE_HOLE"
+  },
+  {
+    "bypasses": [],
+    "injectionPoints": [
+      {
+        "col": 5,
+        "file": "shape8.dart",
+        "kind": "inject",
+        "library": "package:wp1b_shapes/shape8.dart",
+        "line": 9,
+        "member": "main",
+        "name": "runApp",
+        "offset": 170
+      }
+    ],
+    "name": "shape8",
+    "tearOffs": [],
+    "verdict": "INJECTABLE"
+  },
+  {
+    "bypasses": [],
+    "injectionPoints": [],
+    "name": "shape9",
+    "tearOffs": [
+      {
+        "col": 23,
+        "file": "shape9.dart",
+        "kind": "teared",
+        "library": "package:wp1b_shapes/shape9.dart",
+        "line": 5,
+        "member": "main",
+        "name": "runApp",
+        "offset": 120
+      }
+    ],
+    "verdict": "UPGRADE"
+  }
+]

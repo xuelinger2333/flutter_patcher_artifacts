@@ -1,0 +1,93 @@
+name: Build Android engine
+
+on:
+  workflow_dispatch:
+    inputs:
+      flutter_version:
+        description: Flutter stable version, or all for supported_versions.txt
+        required: true
+        type: string
+      publish:
+        description: Upload to a Flutter release already created by the user
+        type: boolean
+        default: false
+      abi:
+        description: Android ABI (M1 only supports arm64-v8a)
+        required: false
+        default: arm64-v8a
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: engine-builder
+  cancel-in-progress: false
+
+jobs:
+  versions:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.select.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - id: select
+        env:
+          REQUESTED_VERSION: ${{ inputs.flutter_version }}
+          REQUESTED_ABI: ${{ inputs.abi }}
+        run: |
+          python3 - <<'PY'
+          import json, os, pathlib, re
+          versions = pathlib.Path('supported_versions.txt').read_text().splitlines()
+          assert versions and len(versions) == len(set(versions))
+          assert all(re.fullmatch(r'\d+\.\d+\.\d+', v) for v in versions)
+          assert os.environ['REQUESTED_ABI'] == 'arm64-v8a', 'Unsupported ABI'
+          requested = os.environ['REQUESTED_VERSION']
+          assert requested == 'all' or requested in versions, 'Unsupported Flutter version'
+          selected = versions if requested == 'all' else [requested]
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write('matrix=' + json.dumps({'flutter_version': selected}) + '\n')
+          PY
+
+  build:
+    needs: versions
+    runs-on: [self-hosted, Linux, X64, engine-builder]
+    timeout-minutes: 360
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: true
+      max-parallel: 1
+      matrix: ${{ fromJSON(needs.versions.outputs.matrix) }}
+    env:
+      WP1_HOME: ${{ vars.ENGINE_WORK_DIR }}
+      FLUTTER_VERSION: ${{ matrix.flutter_version }}
+      ABI: ${{ inputs.abi }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Test pipeline assertions
+        run: python3 -m unittest discover -s engine/scripts/test -v
+      - name: Build, package and verify
+        id: build
+        run: |
+          output="$RUNNER_TEMP/engine-release-$FLUTTER_VERSION-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          echo "release_dir=$output" >> "$GITHUB_OUTPUT"
+          bash engine/scripts/build.sh "$FLUTTER_VERSION" "$ABI" --out "$output"
+      - name: Upload to existing Flutter release
+        if: ${{ inputs.publish == true }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_DIR: ${{ steps.build.outputs.release_dir }}
+        run: python3 engine/scripts/github_release.py publish "$RELEASE_DIR"
+      - name: Preserve release or failure logs
+        if: ${{ inputs.publish == true }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: engine-${{ matrix.flutter_version }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.build.outputs.release_dir }}
+          if-no-files-found: warn
+          retention-days: 14

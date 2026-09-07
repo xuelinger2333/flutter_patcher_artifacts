@@ -1,0 +1,10 @@
+/out/
+/.work/
+/.venv/
+**/.dart_tool/
+**/__pycache__/
+*.pyc
+**/pubspec_overrides.yaml
+**/pubspec.lock
+**/.flutter-plugins-dependencies
+**/build/

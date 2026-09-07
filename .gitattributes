@@ -1,0 +1,11 @@
+* text=auto
+*.sh text eol=lf
+*.py text eol=lf
+*.dart text eol=lf
+*.patch text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.lock text eol=lf
+*.gz binary
+*.zst binary
+*.dill binary

@@ -1,0 +1,94 @@
+name: Build and release tools
+
+on:
+  workflow_dispatch:
+    inputs:
+      flutter_version:
+        description: Supported Flutter version, or all
+        type: string
+        required: true
+        default: all
+      publish:
+        description: Upload to a Flutter release already created by the user
+        type: boolean
+        default: false
+  push:
+    paths: ['tools/**', 'supported_versions.txt', '.github/workflows/build-tools.yml']
+  pull_request:
+    paths: ['tools/**', 'supported_versions.txt', '.github/workflows/build-tools.yml']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tools-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  versions:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.select.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Pipeline contract tests
+        run: python3 -m unittest discover -s tools/release/test -v
+      - id: select
+        env:
+          REQUESTED_VERSION: ${{ inputs.flutter_version || 'all' }}
+        run: python3 tools/release/select_versions.py
+
+  build:
+    needs: versions
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: true
+      matrix: ${{ fromJSON(needs.versions.outputs.matrix) }}
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Select managed build directories
+        env:
+          VERSION: ${{ matrix.flutter_version }}
+        run: |
+          mkdir -p "$HOME/.flutter_patcher/tools-sdk"
+          echo "TOOLS_FLUTTER=$HOME/.flutter_patcher/tools-sdk/flutter-$VERSION" >> "$GITHUB_ENV"
+          echo "TOOLS_WORK=$HOME/.flutter_patcher/tools-runs/$VERSION-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_ENV"
+          echo "TOOLS_OUTPUT=$RUNNER_TEMP/tools-$VERSION-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_ENV"
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          flutter-version: ${{ matrix.flutter_version }}
+          channel: stable
+          cache: false
+          cache-path: ${{ env.TOOLS_FLUTTER }}
+      - name: Build twice and verify snapshots
+        env:
+          VERSION: ${{ matrix.flutter_version }}
+        run: |
+          set -o pipefail
+          python3 tools/release/build_tools.py "$VERSION" --flutter "$FLUTTER_ROOT" --work "$TOOLS_WORK" --out "$TOOLS_OUTPUT" 2>&1 | tee "$RUNNER_TEMP/tools-build.log"
+      - name: Upload to existing Flutter release
+        if: ${{ inputs.publish == true }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 tools/release/publish_tools.py "$TOOLS_OUTPUT"
+      - name: Preserve artifacts and verification evidence
+        if: ${{ inputs.publish == true }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: tools-${{ matrix.flutter_version }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ env.TOOLS_OUTPUT }}
+            ${{ env.TOOLS_WORK }}/verification.json
+            ${{ env.TOOLS_WORK }}/*-smoke.json
+            ${{ env.TOOLS_WORK }}/first/tools.manifest.json
+            ${{ env.TOOLS_WORK }}/second/tools.manifest.json
+            ${{ runner.temp }}/tools-build.log
+          if-no-files-found: warn
+          retention-days: 14

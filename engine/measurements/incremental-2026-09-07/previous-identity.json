@@ -1,0 +1,22 @@
+{
+  "build_completed": true,
+  "build_id": "c8e58b90-7186-4eec-858c-e9fd8fdec7ce",
+  "builder_repo_commit": "baf219f10ed432ea8ebeeb48ca7ea74b7edc1fe8",
+  "built_at": "2026-09-07T07:23:41Z",
+  "depot_tools_rev": "8be1125f74ccca1e2a0823d6f92bcec92f0fd65b",
+  "engine_commit": "5d531788691ec3404cac0cee66ead4007b177363",
+  "engine_stamp": "5d531788691ec3404cac0cee66ead4007b177363",
+  "flutter_version": "3.47.1",
+  "output_sha256": {
+    "embedding": "963e3e0653afa09a3e342ca5ce622d120632724853b3b3718517e89477a9a760",
+    "engine": "5150bd218a2e2596960a2edc8766fba908cfd44c2c1db196ee99da1770eb57fd",
+    "gen_snapshot": "a211ab82619d047f96d68555f8e799e68f6f6c58b2fc0c39953df63f43e78503"
+  },
+  "patches": [
+    {
+      "file": "0001-dyn-module-factory-allocate-finalize.patch",
+      "sha256": "a91ce3bc7f9b4c4f4af19418d8beabc0a4b80c8ddff49550bff1578f0420c83c"
+    }
+  ],
+  "schema": 1
+}

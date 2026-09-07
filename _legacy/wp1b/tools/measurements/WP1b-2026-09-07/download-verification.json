@@ -1,0 +1,9 @@
+{
+  "release": "https://github.com/xuelinger2333/flutter_patcher/releases/tag/tools-3.47.2",
+  "downloaded_assets": 5,
+  "github_asset_hashes": "passed",
+  "engine_manifest_match": "passed",
+  "standalone_kernel_tools_help": "passed",
+  "standalone_dart2bytecode_help": "passed",
+  "builder_repo_commit": "dc326fad2bccaccc2d608c63f0d3a570c64ec367"
+}

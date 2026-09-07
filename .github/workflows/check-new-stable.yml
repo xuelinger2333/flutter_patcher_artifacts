@@ -1,0 +1,26 @@
+name: Check new Flutter stable
+
+on:
+  schedule:
+    - cron: '17 2 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: check-new-stable
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Open a tracking issue when support is missing
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 engine/scripts/github_release.py check-stable

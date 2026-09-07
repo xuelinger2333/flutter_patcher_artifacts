@@ -18,8 +18,13 @@ files are user-side cache entries, not Release assets. CLI orchestration of SDK
 inputs, cache invalidation and doctor belongs to WP-2 and is not implemented here.
 
 The other four specified analysis commands remain unimplemented, as approved for
-M1.5. New-layout snapshot compilation and runtime verification are pending; the
-historical two-dill test results do not certify this combined entry point.
+M1.5. The combined entry point passed hosted CI on 2026-09-08: two builds with
+identical manifests and snapshot hashes, nine fixtures, both generators,
+transform-overlay, and bytecode compilation with --aot-only and --tfa.
+The build verification step took 111.11 seconds. See the
+[acceptance record](../docs/WP1_WP1b_构建验收_2026-09-08.md).
+This publish=false run retained logs but no uploaded dill; Release download and
+doctor integration remain unverified.
 
 `build-tools.yml` uses hosted CI independently of the engine workflow. All upload
 steps are gated by `inputs.publish == true`, default false. The publisher requires

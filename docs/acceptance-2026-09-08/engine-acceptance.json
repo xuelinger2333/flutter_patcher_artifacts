@@ -1,0 +1,65 @@
+{
+  "source_commit": "8518c2dfd962139c2283c9244e4ae09cf4143d22",
+  "flutter_version": "3.47.2",
+  "engine_commit": "a804b261645ef8c13eb3d5c44a5c2fb0340c5539",
+  "first_run_id": 34141768878,
+  "second_run_id": 34143611675,
+  "first_build_id": "930ce683-2072-4028-ba2c-e739451cf2a1",
+  "second_build_id": "18b93f6e-137d-4475-a7ec-377a32a5a549",
+  "manifest_comparison": "passed",
+  "all_artifact_hashes_identical": true,
+  "first_snapshot": {
+    "device": "skipped",
+    "device_reason": "no_android_device",
+    "snapshot": "passed"
+  },
+  "second_snapshot": {
+    "device": "skipped",
+    "device_reason": "no_android_device",
+    "snapshot": "passed"
+  },
+  "first_sync_seconds": 216.62,
+  "first_build_stage_seconds": 1026.5,
+  "second_sync_seconds": 17.65,
+  "second_build_stage_seconds": 233.04,
+  "rebuild_scope": "First build in fresh managed checkout/output; second build reruns same scripts and reuses cache.",
+  "local_download_validation": "passed_both",
+  "device_doctor_and_a1_integration": "pending",
+  "full_a10": "not_complete",
+  "publish": false,
+  "release_upload_and_download": "not_tested",
+  "files": [
+    {
+      "abi": "arm64-v8a",
+      "contents": [
+        {
+          "name": "lib/arm64-v8a/libflutter.so",
+          "sha256": "48ad521ae7a4bee35c164a4fdf647d77ee2f385d60544698920a7aaced535011",
+          "size": 11908208
+        }
+      ],
+      "maven": "io.flutter:arm64_v8a_release:1.0.0-a804b261645ef8c13eb3d5c44a5c2fb0340c5539",
+      "name": "libflutter-arm64_v8a-release.jar",
+      "role": "engine",
+      "sha256": "fbc4ac7992387637a6c7ad73e6f0e3f1c887a8b9671ba1a9a8b381e72ba1feca",
+      "size": 11908360
+    },
+    {
+      "maven": "io.flutter:flutter_embedding_release:1.0.0-a804b261645ef8c13eb3d5c44a5c2fb0340c5539",
+      "name": "flutter_embedding_release.jar",
+      "role": "embedding",
+      "sha256": "79d51115c9154ae201a35d8f91c1bb8acab880e67895f1f697c889f8e1149bff",
+      "size": 1584072
+    },
+    {
+      "host_arch": "x64",
+      "host_os": "linux",
+      "name": "gen_snapshot-linux-x64",
+      "role": "gen_snapshot",
+      "sha256": "cd2d3459ab33e07a3510928a9c5c6d32403cbace1c122cef6aadc131d80d5fcc",
+      "size": 6295056
+    }
+  ],
+  "engine-first_manifest_sha256": "aff310215d4993d28123c8dfc12072696be0745eb2ee4022f9ddc88fed92d351",
+  "engine-second_manifest_sha256": "f625cb11f5ee7df1651e9a29d8b68f34e6cd0401ee60fcfc14652bf1a9d3303b"
+}

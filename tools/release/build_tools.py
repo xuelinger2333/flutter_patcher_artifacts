@@ -180,6 +180,7 @@ def build(args):
     run(dart, f'--packages={config}', package / 'test/detect_shape_test.dart', cwd=package)
     run(dart, f'--packages={config}', package / 'test/interface_test.dart', cwd=package)
     run(dart, f'--packages={config}', package / 'test/build_inspection_test.dart', cwd=package)
+    run(dart, f'--packages={config}', package / 'test/patch_checks_test.dart', cwd=package)
     run(flutter / 'bin/flutter', '--suppress-analytics', 'precache', '--android')
     fixtures = compile_fixtures(flutter, source)
     answers = read_json(package / 'test/fixtures/expected.json')
@@ -203,6 +204,11 @@ def build(args):
     compare(work / 'first', work / 'second')
     transform_smoke(dart, work / 'first', args.version, fixtures, work)
     baseline_smoke(dart, work / 'first' / names(args.version)['tools'], flutter, source, work)
+    from patch_smoke import exercise as exercise_patch
+    patch_verification = exercise_patch(dart, work / 'first' / names(args.version)['tools'],
+                                       flutter, work / 'baseline-smoke/app.dill', work / 'patch-smoke',
+                                       packages=source / 'tools/kernel_tools/test/fixtures/.dart_tool/package_config.json',
+                                       four_check_source=source / 'tools/kernel_tools/test/fixtures/patch/four_checks.dart')
     compiler_smoke(dart, work / 'first', args.version, source, flutter, work)
     from interface_smoke import exercise
     interface_verification = exercise(dart, work / 'first' / names(args.version)['tools'],
@@ -214,7 +220,7 @@ def build(args):
                'kernel_tools_help': 'passed', 'dart2bytecode_help': 'passed',
                'dart2bytecode_compilation': 'passed_aot_only_and_tfa', 'elapsed_seconds': elapsed,
                'builder_repo_commit': commit, 'flutter_version': args.version,
-               'wp3_interfaces': interface_verification})
+               'wp3_interfaces': interface_verification, 'wp6_patch': patch_verification})
     shutil.copytree(work / 'first', output)
     print(f'TOOLS_RELEASE_READY: {output}; A11 passed; {elapsed} seconds', flush=True)
 

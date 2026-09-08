@@ -2,6 +2,8 @@ import 'dart:io';
 import 'dart:convert';
 import 'package:flutter_patcher_kernel_tools/src/interface_commands.dart';
 import 'package:flutter_patcher_kernel_tools/src/build_inspection.dart';
+import 'package:flutter_patcher_kernel_tools/src/patch_compiler.dart';
+import 'package:flutter_patcher_kernel_tools/src/patch_commands.dart';
 import 'package:vm/kernel_front_end.dart' as kernelCompiler;
 
 import 'package:dart2bytecode/dart2bytecode.dart' as bytecode;
@@ -22,7 +24,9 @@ const usage = '''flutter_patcher_tools
 
 Future<void> main(List<String> args) async {
   if (args.length == 1 && (args.first == '--help' || args.first == '-h')) {
-    stdout.write('$usage$interfaceUsage$buildInspectionUsage');
+    stdout.write(
+      '$usage$interfaceUsage$buildInspectionUsage$patchUsage$patchCheckUsage',
+    );
     return;
   }
   if (args.isEmpty) {
@@ -32,6 +36,24 @@ Future<void> main(List<String> args) async {
   }
   final rest = args.sublist(1);
   switch (args.first) {
+    case 'check-allocations':
+    case 'check-inherited':
+    case 'verify-structure':
+      try {
+        stdout.writeln(jsonEncode(await patchCheckCommand(args.first, rest)));
+      } catch (error) {
+        stderr.writeln(jsonEncode({'error': error.toString()}));
+        exitCode = error is FormatException ? 2 : 1;
+      }
+    case 'compile-patch':
+      try {
+        stdout.writeln(jsonEncode(await compilePatch(rest)));
+      } catch (error, stack) {
+        stderr.writeln(
+          jsonEncode({'error': error.toString(), 'stack': stack.toString()}),
+        );
+        exitCode = error is FormatException ? 2 : 1;
+      }
     case 'compile-baseline':
       try {
         exitCode = await kernelCompiler.runCompiler(

@@ -1,5 +1,7 @@
 import 'package:kernel/kernel.dart';
+
 import 'interface_document.dart';
+import 'extract_surface.dart';
 
 const commonWidgets = <String, List<String>>{
   'widgets/container.dart': ['Container'],
@@ -37,6 +39,34 @@ InterfaceDocument interfaceDefaults(
   if (!libraries.containsKey('dart:core'))
     throw StateError('Linked dart:core is missing');
   final doc = InterfaceDocument();
+  if (libraries.containsKey(
+    'package:flutter_patcher/src/patch_bootstrap.dart',
+  )) {
+    // Retain the actual bootstrap/overlay dependencies while building the host.
+    // Patch compilation still validates against this immutable host contract.
+    doc.merge(
+      extractSurface(component, {
+        'flutter_patcher',
+        'dynamic_modules',
+      }).interface,
+    );
+    const assets = 'package:flutter/src/services/asset_bundle.dart';
+    for (final name in ['AssetBundle', 'CachingAssetBundle']) {
+      if (!(libraries[assets]?.classes.any((c) => c.name == name) ?? false)) {
+        throw StateError('Runtime asset superclass missing: $name');
+      }
+      // The module inherits loadString/structured-data helpers and invokes a
+      // super constructor. Those are not ordinary call sites in its body.
+      for (final section in [
+        'callable',
+        'extendable',
+        'can-be-overridden',
+        'can-be-used-as-type',
+      ]) {
+        doc.add(section, assets, type: name);
+      }
+    }
+  }
   for (final s in InterfaceDocument.sections.where(
     (s) => s != 'dynamically-callable',
   )) {
@@ -61,6 +91,9 @@ InterfaceDocument interfaceDefaults(
         (s) => s != 'dynamically-callable',
       )) {
         doc.add(section, uri);
+        for (final type in libraries[uri]!.classes) {
+          doc.add(section, uri, type: type.name);
+        }
       }
     }
     for (final type in ['num', 'int', 'double', 'Enum']) {

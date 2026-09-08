@@ -1,5 +1,7 @@
 import 'package:kernel/kernel.dart';
+
 import 'dart:convert';
+
 import 'package:crypto/crypto.dart';
 import 'package:flutter_patcher_kernel_tools/src/interface_details.dart';
 import 'package:flutter_patcher_kernel_tools/src/interface_document.dart';
@@ -293,8 +295,57 @@ void main() {
         libs.add(lib);
       }
       final c = Component(libraries: libs);
+      final runtime = library(
+        'package:flutter_patcher/src/patch_bootstrap.dart',
+      );
+      final ui = library('dart:ui');
+      final draw = method('draw', isStatic: true);
+      ui.addProcedure(draw);
+      final boot = method('boot', isStatic: true);
+      boot.function.body = ExpressionStatement(
+        StaticInvocation(draw, Arguments([])),
+      );
+      runtime.addProcedure(boot);
+      c.libraries.addAll([runtime, ui]);
+      c.libraries.add(
+        library('package:flutter/src/services/asset_bundle.dart')
+          ..addClass(
+            Class(
+              name: 'AssetBundle',
+              fileUri: Uri.parse('file:///asset.dart'),
+            ),
+          )
+          ..addClass(
+            Class(
+              name: 'CachingAssetBundle',
+              fileUri: Uri.parse('file:///asset.dart'),
+            ),
+          ),
+      );
       final lean = interfaceDefaults(c, whole: false);
       final whole = interfaceDefaults(c, whole: true);
+      check(
+        lean
+            .rows('callable')
+            .any(
+              (r) =>
+                  r['class'] == 'CachingAssetBundle' &&
+                  !r.containsKey('member'),
+            ),
+        'retain asset super constructor and inherited helpers',
+      );
+      check(
+        lean
+            .rows('callable')
+            .any((r) => r['library'] == 'dart:ui' && r['member'] == 'draw'),
+        'bootstrap dependencies retained before freezing host interface',
+      );
+      check(
+        whole
+            .rows('callable')
+            .any((r) => r['library'] == 'dart:core' && r['class'] == 'num'),
+        'platform classes explicitly retained for whole modules',
+      );
       check(
         lean.rows('callable').any((r) => r['class'] == 'Container'),
         'common controls',

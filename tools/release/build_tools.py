@@ -161,6 +161,7 @@ def build(args):
     run(dart, 'pub', 'get', '--enforce-lockfile', cwd=package)
     config = package / '.dart_tool/package_config.json'
     run(dart, f'--packages={config}', package / 'test/detect_shape_test.dart', cwd=package)
+    run(dart, f'--packages={config}', package / 'test/interface_test.dart', cwd=package)
     run(flutter / 'bin/flutter', '--suppress-analytics', 'precache', '--android')
     fixtures = compile_fixtures(flutter, source)
     answers = read_json(package / 'test/fixtures/expected.json')
@@ -184,13 +185,17 @@ def build(args):
     compare(work / 'first', work / 'second')
     transform_smoke(dart, work / 'first', args.version, fixtures, work)
     compiler_smoke(dart, work / 'first', args.version, source, flutter, work)
+    from interface_smoke import exercise
+    interface_verification = exercise(dart, work / 'first' / names(args.version)['tools'],
+                                     flutter, fixtures, source, work / 'interfaces')
     require(git('diff', '--full-index', '--binary', cwd=sdk) == expected_diff, 'Dart source changed during build')
     require(git('rev-parse', 'HEAD') == commit and not git('status', '--porcelain'), 'Builder source changed during build')
     elapsed = round(time.monotonic() - start, 2)
     write_json(work / 'verification.json', {'a11': 'passed', 'snapshot_smoke': 'passed_9_of_9',
                'kernel_tools_help': 'passed', 'dart2bytecode_help': 'passed',
                'dart2bytecode_compilation': 'passed_aot_only_and_tfa', 'elapsed_seconds': elapsed,
-               'builder_repo_commit': commit, 'flutter_version': args.version})
+               'builder_repo_commit': commit, 'flutter_version': args.version,
+               'wp3_interfaces': interface_verification})
     shutil.copytree(work / 'first', output)
     print(f'TOOLS_RELEASE_READY: {output}; A11 passed; {elapsed} seconds', flush=True)
 

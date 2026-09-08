@@ -1,4 +1,6 @@
 import 'dart:io';
+import 'dart:convert';
+import 'package:flutter_patcher_kernel_tools/src/interface_commands.dart';
 
 import 'package:dart2bytecode/dart2bytecode.dart' as bytecode;
 
@@ -17,7 +19,7 @@ const usage = '''flutter_patcher_tools
 
 Future<void> main(List<String> args) async {
   if (args.length == 1 && (args.first == '--help' || args.first == '-h')) {
-    stdout.write(usage);
+    stdout.write('$usage$interfaceUsage');
     return;
   }
   if (args.isEmpty) {
@@ -27,6 +29,20 @@ Future<void> main(List<String> args) async {
   }
   final rest = args.sublist(1);
   switch (args.first) {
+    case 'extract-surface':
+    case 'merge-interface':
+    case 'resolve-interface-hints':
+    case 'trim-interface':
+      if (rest.length == 1 && ['--help', '-h'].contains(rest.first)) {
+        stdout.write(interfaceUsage);
+        return;
+      }
+      try {
+        stdout.writeln(jsonEncode(await interfaceCommand(args.first, rest)));
+      } catch (error) {
+        stderr.writeln(jsonEncode({'error': error.toString()}));
+        exitCode = error is FormatException ? 2 : 1;
+      }
     case 'bytecode':
       // Use the upstream entry point, preserving its argument and exit behavior.
       await bytecode.main(rest);

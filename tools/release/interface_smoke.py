@@ -1,0 +1,92 @@
+"""Actual WP-3 interface/bytecode integration, usable with a CI dill or source entry."""
+import argparse
+import json
+from pathlib import Path
+import subprocess
+
+
+def exercise(dart, entry, flutter, fixtures, source, work):
+    work.mkdir(parents=True, exist_ok=False)
+    def call(*args):
+        result = subprocess.run([str(dart), str(entry), *map(str, args)],
+                                capture_output=True, text=True)
+        if result.returncode:
+            raise RuntimeError(result.stderr + result.stdout)
+        return result.stdout
+    platform = flutter / 'bin/cache/artifacts/engine/common/flutter_patched_sdk_product/platform_strong.dill'
+    index = fixtures / 'shape1.dill'
+    packages = source / 'tools/kernel_tools/test/fixtures/.dart_tool/package_config.json'
+    module = source / 'tools/kernel_tools/test/fixtures/interfaces/module.dart'
+    call('extract-surface', '--dill', index, '--own', 'wp1b_shapes',
+         '--out-iface', work / 'refs.yaml', '--out-trim-iface', work / 'refs-trim.yaml')
+    call('gen-protocol-interface', '--dill', index, '--out', work / 'protocol.yaml')
+    call('gen-platform-privates', '--platform', platform, '--out', work / 'privates.yaml')
+    # Index the module's imports instead of borrowing the baseline import graph.
+    module_index = work / 'module-index.dill'
+    index_entry = work / 'index-entry.dart'
+    index_entry.write_text(f'import {json.dumps(module.as_uri())};\nvoid main() {{}}\n')
+    frontend = flutter / 'bin/cache/artifacts/engine/linux-x64/frontend_server_aot.dart.snapshot'
+    subprocess.run([str(flutter / 'bin/cache/dart-sdk/bin/dartaotruntime'), str(frontend),
+                    '--sdk-root', str(platform.parent) + '/', '--target', 'flutter',
+                    '--no-aot', '--no-tfa', '--link-platform', '--packages', str(packages),
+                    '--output-dill', str(module_index), str(index_entry)], check=True)
+    results = {}
+    for mode in ('lean', 'whole'):
+        previous = work / 'refs.yaml'
+        previous_trim = work / 'refs-trim.yaml'
+        additions = []
+        for iteration in range(1, 6):
+            iface = work / f'{mode}-{iteration}.yaml'
+            trim = work / f'{mode}-{iteration}-trim.yaml'
+            common = ['merge-interface', '--dill', index, '--iface', previous,
+                      '--trim-iface', previous_trim, '--protocol', work / 'protocol.yaml',
+                      '--mode', mode, '--out-iface', iface, '--out-trim-iface', trim]
+            if mode == 'whole':
+                common += ['--platform-privates', work / 'privates.yaml']
+            call(*common, *additions)
+            # Same inputs must produce byte-identical outputs.
+            first = (iface.read_bytes(), trim.read_bytes())
+            call(*common, *additions)
+            assert first == (iface.read_bytes(), trim.read_bytes())
+            output = work / f'{mode}-{iteration}.bytecode'
+            validation_platform = platform
+            imports = []
+            if mode == 'lean':
+                validation_platform = work / f'{mode}-{iteration}-platform.dill'
+                imported = work / f'{mode}-{iteration}-host.dill'
+                call('trim-interface', '--dill', index, '--platform', platform,
+                     '--trim-iface', trim, '--out', imported, '--out-platform', validation_platform)
+                imports = ['--import-dill', imported]
+            args = ['bytecode', '--platform', validation_platform, *imports, '--target', 'flutter',
+                    '--packages', packages, '--validate', iface, '--aot-only',
+                    '--prefix-library-uris', 'wp3_validation', '-o', output]
+            if mode == 'whole':
+                args += ['--allow-dynamic-calls-in-dynamic-modules',
+                         '--extra-selectors-allowed-in-dynamic-calls=-,+,*,get:index,relativeError,absoluteError']
+            result = subprocess.run([str(dart), str(entry), *map(str, args), str(module)],
+                                    capture_output=True, text=True)
+            log = work / f'{mode}-{iteration}.log'
+            log.write_text(result.stderr + '\n' + result.stdout)
+            if result.returncode == 0:
+                assert output.is_file() and output.stat().st_size > 0
+                data = json.loads(iface.read_text())
+                assert not any(r.get('class') == 'Object' for r in data['dynamically-callable'])
+                results[mode] = {'rounds': iteration, 'bytecode_bytes': output.stat().st_size}
+                break
+            if iteration == 5:
+                raise RuntimeError(f'{mode} did not converge: {log.read_text()}')
+            patch = work / f'{mode}-{iteration}-additions.yaml'
+            call('resolve-interface-hints', '--dill', module_index, '--own', 'wp1b_shapes',
+                 '--log', log, '--out', patch)
+            previous, previous_trim = iface, trim
+            additions = ['--additions', patch]
+    (work / 'verification.json').write_text(json.dumps(results, indent=2) + '\n')
+    return results
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description=__doc__)
+    for name in ('dart', 'entry', 'flutter', 'fixtures', 'source', 'work'):
+        parser.add_argument('--' + name, type=Path, required=True)
+    options = parser.parse_args()
+    print(json.dumps(exercise(**vars(options)), indent=2))

@@ -47,7 +47,7 @@ packages:
     source: path
     version: "0.0.0"
   front_end:
-    dependency: "direct overridden"
+    dependency: "direct main"
     description:
       path: "../../../dart-sdk/pkg/front_end"
       relative: true
@@ -133,7 +133,7 @@ packages:
     source: hosted
     version: "1.4.0"
   vm:
-    dependency: "direct overridden"
+    dependency: "direct main"
     description:
       path: "../../../dart-sdk/pkg/vm"
       relative: true

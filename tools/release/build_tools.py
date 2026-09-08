@@ -118,6 +118,23 @@ def transform_smoke(dart, release, version, fixtures, work):
         require(result['verdict'] == verdict, 'Transformation changed resource-bypass classification')
 
 
+def baseline_smoke(dart, tool, flutter, source, work):
+    """Verify the CI-built dill can emit an unlinked application kernel."""
+    fixtures = source / 'tools/kernel_tools/test/fixtures'
+    output = work / 'baseline-smoke'
+    output.mkdir()
+    packages = fixtures / '.dart_tool/package_config.json'
+    run(dart, tool, 'compile-baseline', '--platform',
+        flutter / 'bin/cache/artifacts/engine/common/flutter_patched_sdk_product/platform_strong.dill',
+        '--target', 'flutter', '--no-aot', '--no-tfa', '--no-link-platform',
+        '--packages', packages, '--output', output / 'app.dill',
+        'package:wp1b_shapes/shape1.dart', cwd=fixtures)
+    run(dart, tool, 'inspect-build', '--dill', output / 'app.dill',
+        '--packages', packages, '--out', output)
+    require(read_json(output / 'kernel_receipt.json')['app_only'] is True,
+            'Baseline unexpectedly links platform libraries')
+
+
 def build(args):
     require(sys.platform == 'linux', 'WP-1b build requires Linux')
     versions = (REPO / 'supported_versions.txt').read_text().splitlines()
@@ -162,6 +179,7 @@ def build(args):
     config = package / '.dart_tool/package_config.json'
     run(dart, f'--packages={config}', package / 'test/detect_shape_test.dart', cwd=package)
     run(dart, f'--packages={config}', package / 'test/interface_test.dart', cwd=package)
+    run(dart, f'--packages={config}', package / 'test/build_inspection_test.dart', cwd=package)
     run(flutter / 'bin/flutter', '--suppress-analytics', 'precache', '--android')
     fixtures = compile_fixtures(flutter, source)
     answers = read_json(package / 'test/fixtures/expected.json')
@@ -184,6 +202,7 @@ def build(args):
         create(release, args.version, metadata, commit, pin['dart_commit'], patches_record)
     compare(work / 'first', work / 'second')
     transform_smoke(dart, work / 'first', args.version, fixtures, work)
+    baseline_smoke(dart, work / 'first' / names(args.version)['tools'], flutter, source, work)
     compiler_smoke(dart, work / 'first', args.version, source, flutter, work)
     from interface_smoke import exercise
     interface_verification = exercise(dart, work / 'first' / names(args.version)['tools'],

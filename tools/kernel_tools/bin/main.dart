@@ -1,6 +1,8 @@
 import 'dart:io';
 import 'dart:convert';
 import 'package:flutter_patcher_kernel_tools/src/interface_commands.dart';
+import 'package:flutter_patcher_kernel_tools/src/build_inspection.dart';
+import 'package:vm/kernel_front_end.dart' as kernelCompiler;
 
 import 'package:dart2bytecode/dart2bytecode.dart' as bytecode;
 
@@ -9,6 +11,7 @@ import '../../generators/protocol_set/generate.dart' as protocol;
 import 'kernel_tools.dart' as shapes;
 
 const usage = '''flutter_patcher_tools
+  compile-baseline <pinned gen_kernel arguments...>
   detect-shape --dill <input> --own <pkg,...> [--exclude <substring,...>]
   transform-overlay --dill <input> --own <pkg,...> --out <output>
                     --helper-lib <library-uri> --helper-fn <function>
@@ -19,7 +22,7 @@ const usage = '''flutter_patcher_tools
 
 Future<void> main(List<String> args) async {
   if (args.length == 1 && (args.first == '--help' || args.first == '-h')) {
-    stdout.write('$usage$interfaceUsage');
+    stdout.write('$usage$interfaceUsage$buildInspectionUsage');
     return;
   }
   if (args.isEmpty) {
@@ -29,6 +32,23 @@ Future<void> main(List<String> args) async {
   }
   final rest = args.sublist(1);
   switch (args.first) {
+    case 'compile-baseline':
+      try {
+        exitCode = await kernelCompiler.runCompiler(
+          kernelCompiler.createCompilerArgParser().parse(rest),
+          'compile-baseline',
+        );
+      } catch (error) {
+        stderr.writeln(jsonEncode({'error': error.toString()}));
+        exitCode = 2;
+      }
+    case 'inspect-build':
+      try {
+        stdout.writeln(jsonEncode(await inspectBuild(rest)));
+      } catch (error) {
+        stderr.writeln(jsonEncode({'error': error.toString()}));
+        exitCode = 2;
+      }
     case 'extract-surface':
     case 'merge-interface':
     case 'resolve-interface-hints':

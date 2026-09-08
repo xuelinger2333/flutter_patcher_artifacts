@@ -21,6 +21,7 @@ class AllocationCheck extends RecursiveVisitor {
   final Set<String> allocated;
   final List<Map<String, Object?>> issues = [];
   final List<Map<String, Object?>> fonts = [];
+  final List<Map<String, Object?>> dynamicFonts = [];
   AllocationCheck(this.host, this.allocated);
   void reference(Class cls, TreeNode at, String kind) {
     final key = '${cls.enclosingLibrary.importUri}::${cls.name}';
@@ -39,6 +40,17 @@ class AllocationCheck extends RecursiveVisitor {
 
   @override
   void visitConstructorInvocation(ConstructorInvocation n) {
+    if (n.target.enclosingClass.name == 'IconData' &&
+        n.target.enclosingClass.enclosingLibrary.importUri.toString() ==
+            'package:flutter/src/widgets/icon_data.dart') {
+      dynamicFonts.add(
+        site(
+          n,
+          'PATCH_DYNAMIC_ICON',
+          'Non-constant IconData cannot be subset safely',
+        ),
+      );
+    }
     reference(n.target.enclosingClass, n, 'new');
     super.visitConstructorInvocation(n);
   }
@@ -71,13 +83,32 @@ class AllocationCheck extends RecursiveVisitor {
           c.classNode.name == 'IconData' &&
           c.classNode.enclosingLibrary.importUri.toString() ==
               'package:flutter/src/widgets/icon_data.dart') {
-        fonts.add(
-          site(
+        fonts.add({
+          ...site(
             n,
             'PATCH_FONT_REQUIRED',
             'IconData requires complete WP-7 font subsetting',
           ),
-        );
+          for (final field in c.fieldValues.entries)
+            if ([
+              'codePoint',
+              'fontFamily',
+              'fontPackage',
+              'fontFamilyFallback',
+              'matchTextDirection',
+            ].contains(field.key.asField.name.text))
+              field.key.asField.name.text: switch (field.value) {
+                IntConstant v => v.value,
+                StringConstant v => v.value,
+                BoolConstant v => v.value,
+                NullConstant _ => null,
+                ListConstant v => [
+                  for (final entry in v.entries)
+                    (entry as StringConstant).value,
+                ],
+                _ => throw StateError('Unexpected IconData field'),
+              },
+        });
       }
       if (c is ConstructorTearOffConstant && c.target is Constructor)
         reference(c.target.enclosingClass!, n, 'constant tear-off');

@@ -16,9 +16,10 @@ const String _bindingLib = 'package:flutter/src/widgets/binding.dart';
 const String _bundleLib = 'package:flutter/src/widgets/basic.dart';
 const Set<String> _entryPoints = <String>{'runApp', 'runWidget'};
 
-Library _lib(Component c, String uri) =>
-    c.libraries.firstWhere((Library l) => l.importUri.toString() == uri,
-        orElse: () => throw 'library not in component: $uri');
+Library _lib(Component c, String uri) => c.libraries.firstWhere(
+  (Library l) => l.importUri.toString() == uri,
+  orElse: () => throw 'library not in component: $uri',
+);
 
 class _Wrap extends RecursiveVisitor {
   _Wrap(this.ownPackages, this.ctor, this.helper);
@@ -47,11 +48,16 @@ class _Wrap extends RecursiveVisitor {
     final Expression original = node.arguments.positional[0];
     final ConstructorInvocation wrap = ConstructorInvocation(
       ctor,
-      Arguments(<Expression>[], named: <NamedExpression>[
-        NamedExpression(
-            'bundle', StaticInvocation(helper, Arguments(<Expression>[]))),
-        NamedExpression('child', original),
-      ]),
+      Arguments(
+        <Expression>[],
+        named: <NamedExpression>[
+          NamedExpression(
+            'bundle',
+            StaticInvocation(helper, Arguments(<Expression>[])),
+          ),
+          NamedExpression('child', original),
+        ],
+      ),
     )..fileOffset = node.fileOffset;
     node.arguments.positional[0] = wrap;
     wrap.parent = node.arguments;
@@ -59,20 +65,65 @@ class _Wrap extends RecursiveVisitor {
   }
 }
 
-Future<Map<String, Object?>> transformOverlay(String input, String output,
-    Set<String> own, String helperLibrary, String helperFunction) async {
+Future<Map<String, Object?>> transformOverlay(
+  String input,
+  String output,
+  Set<String> own,
+  String helperLibrary,
+  String helperFunction,
+) async {
   final component = loadComponentFromBinary(input);
-  final defaultAssetBundle = _lib(component, _bundleLib)
-      .classes
-      .firstWhere((c) => c.name == 'DefaultAssetBundle');
-  final ctor =
-      defaultAssetBundle.constructors.firstWhere((c) => c.name.text == '');
-  final helper = _lib(component, helperLibrary)
-      .procedures
-      .firstWhere((p) => p.name.text == helperFunction);
-  final visitor = _Wrap(own, ctor, helper);
-  component.accept(visitor);
+  final result = transformOverlayComponent(
+    component,
+    own,
+    helperLibrary,
+    helperFunction,
+  );
   await writeComponentToBinary(component, output);
   loadComponentFromBinary(output);
+  return result;
+}
+
+Map<String, Object?> transformOverlayComponent(
+  Component component,
+  Set<String> own,
+  String helperLibrary,
+  String helperFunction,
+) {
+  final defaultAssetBundle = _lib(
+    component,
+    _bundleLib,
+  ).classes.firstWhere((c) => c.name == 'DefaultAssetBundle');
+  final ctor = defaultAssetBundle.constructors.firstWhere(
+    (c) => c.name.text == '',
+  );
+  final helper = _lib(
+    component,
+    helperLibrary,
+  ).procedures.firstWhere((p) => p.name.text == helperFunction);
+  final visitor = _Wrap(own, ctor, helper);
+  component.accept(visitor);
   return {'wrapped': visitor.wrapped};
+}
+
+Map<String, Object?> transformWholeOverlay(
+  Component component,
+  String helperLibrary,
+) {
+  final services = _lib(
+    component,
+    'package:flutter/src/services/asset_bundle.dart',
+  );
+  final root = services.fields.firstWhere((f) => f.name.text == 'rootBundle');
+  final original = root.initializer;
+  if (original == null) throw StateError('rootBundle initializer missing');
+  final helper = _lib(
+    component,
+    helperLibrary,
+  ).procedures.firstWhere((p) => p.name.text == 'patcherWholeBundle');
+  final replacement = StaticInvocation(helper, Arguments([original]))
+    ..fileOffset = original.fileOffset;
+  root.initializer = replacement;
+  replacement.parent = root;
+  return {'root_bundle_replaced': true};
 }

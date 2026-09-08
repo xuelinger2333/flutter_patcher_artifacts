@@ -209,6 +209,11 @@ def build(args):
                                        flutter, work / 'baseline-smoke/app.dill', work / 'patch-smoke',
                                        packages=source / 'tools/kernel_tools/test/fixtures/.dart_tool/package_config.json',
                                        four_check_source=source / 'tools/kernel_tools/test/fixtures/patch/four_checks.dart')
+    run(dart, f'--packages={config}', source / 'tools/release/resource_smoke.dart',
+        work, work / 'first' / names(args.version)['tools'], work / 'baseline-smoke', flutter,
+        source / 'tools/kernel_tools/test/fixtures/resources/overlay.dart',
+        source / 'tools/kernel_tools/test/fixtures/.dart_tool/package_config.json')
+    resource_verification = read_json(work / 'tool-smoke.json')
     compiler_smoke(dart, work / 'first', args.version, source, flutter, work)
     from interface_smoke import exercise
     interface_verification = exercise(dart, work / 'first' / names(args.version)['tools'],
@@ -220,7 +225,8 @@ def build(args):
                'kernel_tools_help': 'passed', 'dart2bytecode_help': 'passed',
                'dart2bytecode_compilation': 'passed_aot_only_and_tfa', 'elapsed_seconds': elapsed,
                'builder_repo_commit': commit, 'flutter_version': args.version,
-               'wp3_interfaces': interface_verification, 'wp6_patch': patch_verification})
+               'wp3_interfaces': interface_verification, 'wp6_patch': patch_verification,
+               'wp7_resources': resource_verification})
     shutil.copytree(work / 'first', output)
     print(f'TOOLS_RELEASE_READY: {output}; A11 passed; {elapsed} seconds', flush=True)
 

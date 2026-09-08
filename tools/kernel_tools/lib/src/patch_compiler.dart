@@ -14,6 +14,7 @@ import 'package:_fe_analyzer_shared/src/messages/diagnostic_message.dart'
     show getMessageCharOffset;
 import 'patch_checks.dart';
 import 'detect_shape.dart';
+import 'transform_overlay.dart';
 
 const patchUsage = '  compile-patch --request <json>\n';
 
@@ -93,9 +94,12 @@ Future<Map<String, Object?>> compilePatch(List<String> args) async {
   // enclosing declaration from the same Kernel only when the match is unique.
   for (final diagnostic in diagnostics) {
     if (diagnostic['line'] != null ||
-        diagnostic['code'] != 'ConstructorShouldBeListedAsCallableInDynamicInterface') continue;
-    final name = RegExp(r"Cannot invoke constructor '([^']+)'")
-        .firstMatch(diagnostic['message'] as String)?.group(1);
+        diagnostic['code'] !=
+            'ConstructorShouldBeListedAsCallableInDynamicInterface')
+      continue;
+    final name = RegExp(
+      r"Cannot invoke constructor '([^']+)'",
+    ).firstMatch(diagnostic['message'] as String)?.group(1);
     final candidates = <Map<String, Object?>>[];
     for (final lib in module) {
       for (final cls in lib.classes) {
@@ -103,11 +107,14 @@ Future<Map<String, Object?>> compilePatch(List<String> args) async {
           for (final initializer in constructor.initializers) {
             if (initializer is! SuperInitializer) continue;
             final target = initializer.target;
-            final targetName = target.enclosingClass.name +
+            final targetName =
+                target.enclosingClass.name +
                 (target.name.text.isEmpty ? '' : '.${target.name.text}');
             final location = site(initializer, '', '');
-            if (targetName == name && location['file'] == diagnostic['file'] &&
-                location['line'] != null) candidates.add(location);
+            if (targetName == name &&
+                location['file'] == diagnostic['file'] &&
+                location['line'] != null)
+              candidates.add(location);
           }
         }
       }
@@ -134,6 +141,31 @@ Future<Map<String, Object?>> compilePatch(List<String> args) async {
   }
   final allocationData =
       jsonDecode(await File(value('allocated')).readAsString()) as Map;
+  Map<String, Object?>? resourceShape, overlayTransform;
+  if (req['resources'] == true) {
+    resourceShape = detectShape(
+      component,
+      (req['own'] as List).cast<String>().toSet(),
+      excluded: ['__patch_entry.dart', '__patch_overlay.dart'],
+    );
+    if (req['overlay_library'] is String &&
+        diagnostics.isEmpty &&
+        (tier == 'whole' || resourceShape['verdict'] == 'INJECTABLE')) {
+      overlayTransform = tier == 'whole'
+          ? transformWholeOverlay(component, value('overlay_library'))
+          : transformOverlayComponent(
+              component,
+              (req['own'] as List).cast<String>().toSet(),
+              value('overlay_library'),
+              'patcherOverlayBundle',
+            );
+      if (tier == 'lean' &&
+          (overlayTransform['wrapped'] as int) !=
+              (resourceShape['injectionPoints'] as List).length) {
+        throw StateError('Overlay injection count differs from detection');
+      }
+    }
+  }
   final checker = AllocationCheck(
     result.loadedLibraries,
     (allocationData['classes'] as List).cast<String>().toSet(),
@@ -159,17 +191,14 @@ Future<Map<String, Object?>> compilePatch(List<String> args) async {
   };
   // Resource installation is supplied by WP-7; always report shape before gating.
   if (req['resources'] == true) {
-    final shape = detectShape(
-      component,
-      (req['own'] as List).cast<String>().toSet(),
-      excluded: ['__patch_entry.dart'],
-    );
-    checks['resources'] = shape;
+    checks['resources'] = resourceShape!;
   }
   final report = <String, Object?>{
     'tier': tier,
     'checks': checks,
     'fonts': checker.fonts,
+    'dynamic_fonts': checker.dynamicFonts,
+    if (overlayTransform != null) 'overlay': overlayTransform,
     'module_libraries': module.map((l) => l.importUri.toString()).toList(),
   };
   if (req['kernel_out'] is String)
@@ -228,6 +257,7 @@ Future<Map<String, Object?>> compilePatch(List<String> args) async {
     for (final lib in module) lib.accept(after);
     checks['allocation'] = after.issues;
     report['fonts'] = after.fonts;
+    report['dynamic_fonts'] = after.dynamicFonts;
     report['module_libraries'] = module
         .map((l) => l.importUri.toString())
         .toList();
@@ -242,13 +272,26 @@ Future<Map<String, Object?>> compilePatch(List<String> args) async {
   // Prefix all newly compiled libraries (including the whole-tier framework).
   // User/new dependency package names were remapped before resolution.
   final uriPrefix = 'package:patch.${req['seq']}.';
+  for (final lib in module) {
+    if (lib.importUri.toString() == 'dart:mixin_deduplication') {
+      final replacement = Uri.parse(
+        '${uriPrefix}__vm/mixin_deduplication.dart',
+      );
+      if (component.libraries.any((other) => other.importUri == replacement)) {
+        throw StateError('Generated mixin library URI collision');
+      }
+      lib.importUri = replacement;
+    }
+  }
   prefix.prefixLibraryUris(component, {
     ...result.loadedLibraries,
     ...module.where((l) => l.importUri.toString().startsWith(uriPrefix)),
   }, 'patch/${req['seq']}');
   final libraries = module.map((l) => l.importUri.toString()).toList();
   if (libraries.isEmpty || libraries.any((u) => !u.startsWith(uriPrefix))) {
-    throw StateError('Unprefixed module library');
+    throw StateError(
+      'Unprefixed module library: ${libraries.where((u) => !u.startsWith(uriPrefix)).join(', ')}',
+    );
   }
   final output = File(value('out'));
   final sink = output.openWrite();

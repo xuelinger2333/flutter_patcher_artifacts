@@ -1,16 +1,20 @@
 import 'dart:io';
+import 'dart:convert';
+import 'package:crypto/crypto.dart';
 import 'package:kernel/kernel.dart';
 import 'extract_surface.dart';
 import 'interface_document.dart';
 import 'interface_defaults.dart';
 import 'resolve_interface_hints.dart';
 import 'trim_interface.dart';
+import 'interface_details.dart';
 
 const interfaceUsage = '''
   extract-surface --dill <app.dill> --own <pkg,...> --out-iface <yaml> --out-trim-iface <yaml>
   merge-interface --dill <linked.dill> --iface <yaml> --trim-iface <yaml> --protocol <yaml>
                   --mode lean|whole [--platform-privates <yaml>] [--additions <yaml>]
                   --out-iface <yaml> --out-trim-iface <yaml>
+                  [--out-details <json>] [--details-in <previous-json>]
   resolve-interface-hints --dill <module-index.dill> --own <pkg,...> --log <file> --out <yaml>
   trim-interface --dill <app.dill> --platform <platform.dill> --trim-iface <yaml>
                  --out <app-trim.dill> --out-platform <platform-trim.dill>
@@ -40,6 +44,8 @@ Future<Map<String, Object?>> interfaceCommand(
       '--additions',
       '--out-iface',
       '--out-trim-iface',
+      '--out-details',
+      '--details-in',
     },
     _ => throw FormatException('Unknown interface command: $command'),
   };
@@ -111,16 +117,67 @@ Future<Map<String, Object?>> interfaceCommand(
     return surface.counts;
   }
   final mode = required('--mode');
+  final outputs = [
+    required('--out-iface'),
+    required('--out-trim-iface'),
+    if (options.containsKey('--out-details')) required('--out-details'),
+  ].map((v) => File(v).absolute.path).toList();
+  final inputPaths =
+      [
+            '--dill',
+            '--iface',
+            '--trim-iface',
+            '--protocol',
+            '--platform-privates',
+            '--additions',
+            '--details-in',
+          ]
+          .where(options.containsKey)
+          .map((v) => File(required(v)).absolute.path)
+          .toSet();
+  if (outputs.toSet().length != outputs.length ||
+      outputs.any(inputPaths.contains)) {
+    throw const FormatException(
+      'Interface output paths must be distinct from each other and inputs',
+    );
+  }
   if (!['lean', 'whole'].contains(mode))
     throw const FormatException('Invalid --mode');
-  final doc = read('--iface')
-    ..merge(read('--protocol'))
-    ..merge(interfaceDefaults(component, whole: mode == 'whole'));
-  if (mode == 'whole') doc.merge(read('--platform-privates'));
-  if (options.containsKey('--additions')) doc.merge(read('--additions'));
+  final inputs = <String, InterfaceDocument>{
+    'referenced': read('--iface'),
+    'protocol': read('--protocol'),
+    'defaults': interfaceDefaults(component, whole: mode == 'whole'),
+    if (mode == 'whole') 'platform-privates': read('--platform-privates'),
+    if (options.containsKey('--additions'))
+      'compiler-hint': read('--additions'),
+  };
+  final doc = InterfaceDocument();
+  for (final input in inputs.values) {
+    doc.merge(input);
+  }
   final trim = read('--trim-iface')..merge(doc);
   write('--out-iface', doc);
   write('--out-trim-iface', trim);
+  if (options.containsKey('--out-details')) {
+    final target = File(required('--out-details'));
+    final detail = describeInterface(
+      component,
+      doc,
+      inputs,
+      previous: options.containsKey('--details-in')
+          ? jsonDecode(File(required('--details-in')).readAsStringSync())
+                as Map<String, dynamic>
+          : null,
+      previousHash: sha256
+          .convert(File(required('--iface')).readAsBytesSync())
+          .toString(),
+    );
+    target.parent.createSync(recursive: true);
+    target.writeAsStringSync(
+      '${const JsonEncoder.withIndent('  ').convert(detail)}\n',
+      flush: true,
+    );
+  }
   return {
     'entries': InterfaceDocument.sections.fold<int>(
       0,

@@ -1,6 +1,7 @@
 """Actual WP-3 interface/bytecode integration, usable with a CI dill or source entry."""
 import argparse
 import json
+import hashlib
 from pathlib import Path
 import subprocess
 
@@ -35,19 +36,27 @@ def exercise(dart, entry, flutter, fixtures, source, work):
         previous = work / 'refs.yaml'
         previous_trim = work / 'refs-trim.yaml'
         additions = []
+        previous_details = None
         for iteration in range(1, 6):
             iface = work / f'{mode}-{iteration}.yaml'
             trim = work / f'{mode}-{iteration}-trim.yaml'
+            details = work / f'{mode}-{iteration}-details.json'
             common = ['merge-interface', '--dill', index, '--iface', previous,
                       '--trim-iface', previous_trim, '--protocol', work / 'protocol.yaml',
-                      '--mode', mode, '--out-iface', iface, '--out-trim-iface', trim]
+                      '--mode', mode, '--out-iface', iface, '--out-trim-iface', trim,
+                      '--out-details', details]
+            if previous_details:
+                common += ['--details-in', previous_details]
             if mode == 'whole':
                 common += ['--platform-privates', work / 'privates.yaml']
             call(*common, *additions)
             # Same inputs must produce byte-identical outputs.
-            first = (iface.read_bytes(), trim.read_bytes())
+            first = (iface.read_bytes(), trim.read_bytes(), details.read_bytes())
             call(*common, *additions)
-            assert first == (iface.read_bytes(), trim.read_bytes())
+            assert first == (iface.read_bytes(), trim.read_bytes(), details.read_bytes())
+            detail = json.loads(details.read_text())
+            assert detail['interface_sha256'] == hashlib.sha256(iface.read_bytes()).hexdigest()
+            assert all(row['sources'] for row in detail['entries'])
             output = work / f'{mode}-{iteration}.bytecode'
             validation_platform = platform
             imports = []
@@ -79,6 +88,7 @@ def exercise(dart, entry, flutter, fixtures, source, work):
             call('resolve-interface-hints', '--dill', module_index, '--own', 'wp1b_shapes',
                  '--log', log, '--out', patch)
             previous, previous_trim = iface, trim
+            previous_details = details
             additions = ['--additions', patch]
     (work / 'verification.json').write_text(json.dumps(results, indent=2) + '\n')
     return results

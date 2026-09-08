@@ -1,4 +1,7 @@
 import 'package:kernel/kernel.dart';
+import 'dart:convert';
+import 'package:crypto/crypto.dart';
+import 'package:flutter_patcher_kernel_tools/src/interface_details.dart';
 import 'package:flutter_patcher_kernel_tools/src/interface_document.dart';
 import 'package:flutter_patcher_kernel_tools/src/extract_surface.dart';
 import 'package:flutter_patcher_kernel_tools/src/interface_defaults.dart';
@@ -38,6 +41,57 @@ void main() {
     cases++;
     print('PASS $name');
   }
+
+  test('detailed interface keeps final union and accumulated provenance', () {
+    final c = Component(libraries: [library('package:app/main.dart')]);
+    final a = InterfaceDocument()
+      ..add('callable', 'package:app/main.dart', type: 'Widget');
+    final b = InterfaceDocument()
+      ..add('callable', 'package:app/main.dart', type: 'Widget');
+    final first = describeInterface(c, a, {'referenced': a, 'protocol': b});
+    final row = (first['entries'] as List).single as Map;
+    check(
+      jsonEncode(row['sources']) == '["protocol","referenced"]',
+      'Union provenance',
+    );
+    check(row['location'] == null, 'Do not invent missing locations');
+    final hint = InterfaceDocument()
+      ..add('callable', 'package:app/main.dart', type: 'Extra');
+    final result = InterfaceDocument()
+      ..merge(a)
+      ..merge(hint);
+    final second = describeInterface(
+      c,
+      result,
+      {'referenced': a, 'compiler-hint': hint},
+      previous: Map<String, dynamic>.from(first),
+      previousHash: sha256.convert(utf8.encode(a.encode())).toString(),
+    );
+    check((second['entries'] as List).length == 2, 'Final union cardinality');
+    check(
+      jsonEncode(second) ==
+          jsonEncode(
+            describeInterface(
+              c,
+              result,
+              {'compiler-hint': hint, 'referenced': a},
+              previous: Map<String, dynamic>.from(first),
+              previousHash: sha256.convert(utf8.encode(a.encode())).toString(),
+            ),
+          ),
+      'Determinism',
+    );
+    rejects(
+      () => describeInterface(
+        c,
+        result,
+        {'referenced': a},
+        previous: Map<String, dynamic>.from(first),
+        previousHash: 'wrong',
+      ),
+      'Previous hash',
+    );
+  });
 
   test(
     'canonical merge, list expansion, distinct member/class and constructor',

@@ -3,6 +3,7 @@ publish_to: none
 environment:
   sdk: '>=3.13.0 <4.0.0'
 dependencies:
+  crypto: 3.0.7
   kernel: any
   dart2bytecode: any
   front_end: any

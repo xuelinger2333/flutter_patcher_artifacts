@@ -11,6 +11,14 @@ def build(dart, tool, platform, interface, fingerprint, seq, out, tier='lean'):
         raise ValueError('Invalid fixture identity')
     out.mkdir(parents=True, exist_ok=False)
     if tier not in ['lean', 'whole']: raise ValueError('Invalid tier')
+    # Fixtures import only SDK libraries. The validator resolves every listed
+    # class, so app/Flutter entries cannot be passed to this minimal component.
+    # Project the generated JSON interface without adding any permissions.
+    specification = json.loads(interface.read_text())
+    core_interface = out / 'core-interface.json'
+    core_interface.write_text(json.dumps({section: [row for row in rows
+        if row['library'].startswith('dart:')]
+        for section, rows in specification.items()}, indent=2))
     prefix = f'1,{seq},"{fingerprint}","{tier}",'
     sources = {
         'entry-short': '<Object?>[1]',
@@ -27,7 +35,7 @@ def build(dart, tool, platform, interface, fingerprint, seq, out, tier='lean'):
             'void hang() { while (true) {} }\n')
         output = out / f'{name}.bc'
         subprocess.run([str(dart), str(tool), 'bytecode', '--platform', str(platform),
-            '--target', 'flutter', '--validate', str(interface), '--aot-only',
+            '--target', 'flutter', '--validate', str(core_interface), '--aot-only',
             '-o', str(output), str(source)], check=True)
         data = output.read_bytes()
         if len(data) < 120 or data[:4] != b'3CBD':

@@ -49,6 +49,27 @@ class SourceTests(unittest.TestCase):
         result = self.shell('assert_commit', self.root, self.git('rev-parse', 'HEAD'))
         self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_missing_gn_and_command_fail_before_build(self):
+        missing = self.shell('assert_gn', self.root / 'absent.gn')
+        self.assertNotEqual(missing.returncode, 0)
+        self.assertIn('args.gn missing', missing.stderr)
+        command = self.shell('require_commands', 'wp9-command-that-does-not-exist')
+        self.assertNotEqual(command.returncode, 0)
+        self.assertIn('required command missing', command.stderr)
+
+    def test_wrong_host_and_dirty_builder_fail(self):
+        for body, message in [
+            ('uname() { echo Darwin; }; assert_host', 'requires Linux x86_64'),
+            ('WP1_HOME=relative; assert_host', 'absolute managed directory'),
+            ('WP1_REPO="$2"; assert_clean_builder', 'builder repository is dirty'),
+        ]:
+            (self.root / 'untracked.txt').write_text('deliberately dirty')
+            result = subprocess.run([self.bash, '-c', 'source "$1"; ' + body,
+                                     'test', str(SCRIPTS / 'common.sh'), str(self.root)],
+                                    capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn(message, result.stderr)
+
     def test_missing_false_and_commented_dynamic_module_flag_fail(self):
         args = self.root / 'args.gn'
         for content in ('target_cpu = "arm64"\n', 'dart_dynamic_modules = false\n',

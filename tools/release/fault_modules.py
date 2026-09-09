@@ -6,22 +6,25 @@ from pathlib import Path
 import subprocess
 
 
-def build(dart, tool, platform, interface, fingerprint, seq, out):
+def build(dart, tool, platform, interface, fingerprint, seq, out, tier='lean'):
     if len(fingerprint) != 64 or any(c not in '0123456789abcdef' for c in fingerprint) or seq < 1:
         raise ValueError('Invalid fixture identity')
     out.mkdir(parents=True, exist_ok=False)
-    prefix = f'1,{seq},"{fingerprint}","lean",'
+    if tier not in ['lean', 'whole']: raise ValueError('Invalid tier')
+    prefix = f'1,{seq},"{fingerprint}","{tier}",'
     sources = {
         'entry-short': '<Object?>[1]',
         'entry-not-function': f'<Object?>[{prefix}42,null]',
         'main-throws': f'<Object?>[{prefix}fail,null]',
+        'main-hangs': f'<Object?>[{prefix}hang,null]',
     }
     records = {}
     for name, expression in sources.items():
         source = out / f'{name}.dart'
         source.write_text('@pragma("vm:entry-point")\n@pragma("dyn-module:entry-point")\n'
             f'Object? dynamicModuleEntrypoint() => {expression};\n'
-            'void fail() { throw StateError("WP9 intentional boot failure"); }\n')
+            'void fail() { throw StateError("WP9 intentional boot failure"); }\n'
+            'void hang() { while (true) {} }\n')
         output = out / f'{name}.bc'
         subprocess.run([str(dart), str(tool), 'bytecode', '--platform', str(platform),
             '--target', 'flutter', '--validate', str(interface), '--aot-only',
@@ -39,4 +42,5 @@ if __name__ == '__main__':
         parser.add_argument('--' + name, required=True, type=Path)
     parser.add_argument('--fingerprint', required=True)
     parser.add_argument('--seq', required=True, type=int)
+    parser.add_argument('--tier', choices=['lean', 'whole'], default='lean')
     build(**vars(parser.parse_args()))

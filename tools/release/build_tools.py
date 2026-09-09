@@ -215,6 +215,10 @@ def build(args):
         source / 'tools/kernel_tools/test/fixtures/.dart_tool/package_config.json')
     resource_verification = read_json(work / 'tool-smoke.json')
     compiler_smoke(dart, work / 'first', args.version, source, flutter, work)
+    from fault_modules import build as build_fault_modules
+    build_fault_modules(dart, work / 'first' / names(args.version)['tools'],
+                        flutter / 'bin/cache/artifacts/engine/common/flutter_patched_sdk_product/platform_strong.dill',
+                        work / 'compiler-interface.yaml', 'a' * 64, 7, work / 'wp9-fault-modules')
     from interface_smoke import exercise
     interface_verification = exercise(dart, work / 'first' / names(args.version)['tools'],
                                      flutter, fixtures, source, work / 'interfaces')
@@ -226,7 +230,8 @@ def build(args):
                'dart2bytecode_compilation': 'passed_aot_only_and_tfa', 'elapsed_seconds': elapsed,
                'builder_repo_commit': commit, 'flutter_version': args.version,
                'wp3_interfaces': interface_verification, 'wp6_patch': patch_verification,
-               'wp7_resources': resource_verification})
+               'wp7_resources': resource_verification,
+               'wp9_fault_modules': read_json(work / 'wp9-fault-modules/modules.json')})
     shutil.copytree(work / 'first', output)
     print(f'TOOLS_RELEASE_READY: {output}; A11 passed; {elapsed} seconds', flush=True)
 

@@ -33,7 +33,8 @@ def build(dart, tool, platform, interface, fingerprint, seq, out, tier='lean'):
         if len(data) < 120 or data[:4] != b'3CBD':
             raise ValueError('Compiler did not emit the pinned DBC3 format')
         records[name] = dict(bytes=len(data), sha256=hashlib.sha256(data).hexdigest())
-    (out / 'modules.json').write_text(json.dumps(records, indent=2) + '\n')
+    (out / 'modules.json').write_text(json.dumps({'schema': 1, 'fingerprint': fingerprint,
+        'seq': seq, 'tier': tier, 'files': records}, indent=2) + '\n')
 
 
 if __name__ == '__main__':

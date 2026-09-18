@@ -73,16 +73,21 @@ Future<Map<String, Object?>> patchCheckCommand(
       }
       final listedCarry = options['--expected-carried'] == null
           ? (partition['carry'] as List).cast<String>()
-          : options['--expected-carried']!.split(',').where((v) => v.isNotEmpty);
+          : options['--expected-carried']!
+                .split(',')
+                .where((v) => v.isNotEmpty);
       expectedCarry = {
         for (final uri in listedCarry)
           '$package/${uri.substring('package:flutter/'.length)}',
       };
       final actualCarry = uris.where((u) => u.startsWith('$package/')).toSet();
+      // compile-patch prefixes module URIs, so an original framework library
+      // that leaked into the module shows up as package:patch.<seq>.flutter/.
+      final original = RegExp(r'^package:(patch\.\d+\.)?flutter/');
       reuseOk =
           actualCarry.length == expectedCarry.length &&
           actualCarry.containsAll(expectedCarry) &&
-          !uris.any((u) => u.startsWith('package:flutter/'));
+          !uris.any(original.hasMatch);
     }
     final ok =
         uris.isNotEmpty &&

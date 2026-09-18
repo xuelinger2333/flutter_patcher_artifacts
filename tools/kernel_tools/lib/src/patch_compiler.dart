@@ -112,12 +112,14 @@ Future<Map<String, Object?>> compilePatch(List<String> args) async {
       throw const FormatException('Framework partition does not match request');
     }
     final requested = carried.cast<String>().toSet();
-    // Libraries outside the selected carry set are treated as host supplied.
-    // They stay in the component for name resolution but are excluded from the
-    // bytecode module and resolved through the validated dynamic interface.
+    // Every original package:flutter library is host supplied, including the
+    // ones whose copies are carried: the carry copies live under the carry
+    // package and the barrel shims hide the originals, so an original that
+    // stayed in the module would only duplicate its carried copy. Originals
+    // stay in the component for name resolution and resolve through the
+    // validated dynamic interface.
     for (final library in component.libraries) {
-      final uri = '${library.importUri}';
-      if (uri.startsWith('package:flutter/') && !requested.contains(uri)) {
+      if ('${library.importUri}'.startsWith('package:flutter/')) {
         loadedLibraries.add(library);
       }
     }

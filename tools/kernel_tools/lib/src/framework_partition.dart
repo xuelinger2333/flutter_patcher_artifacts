@@ -210,8 +210,11 @@ class _FrameworkTypeVisitor extends RecursiveVisitor {
 }
 
 /// Collects only declarations whose canonical Kernel nodes are referenced by
-/// a carried library.  `dynamically-callable` intentionally receives instance
-/// members only; static members and constructors belong to `callable`.
+/// a carried library. Every member goes to `callable`: the validator checks
+/// statically typed instance invocations against that section, while
+/// `dynamically-callable` only covers `dynamic` receivers and additionally
+/// forbids noSuchMethod anywhere in the class hierarchy. Carried framework
+/// code has no dynamic receivers, so that section is never needed here.
 class _FrameworkReuseCollector extends RecursiveVisitor {
   final Set<String> hostUris;
   final List<Map<String, String>> rows;
@@ -262,39 +265,13 @@ class _FrameworkReuseCollector extends RecursiveVisitor {
               ? 'set:${member.name.text}'
               : member.name.text)
         : member.name.text;
-    // The VM rejects exposing a class that declares or inherits
-    // noSuchMethod as dynamically-callable.  Such a class cannot safely be
-    // part of the reusable host surface; the compiler will report it as a
-    // normal non-carriable dependency when a patch actually needs it.
-    if (member.isInstanceMember && clazz != null && _hasNoSuchMethod(clazz)) {
-      return;
-    }
     rows.add({
       'library': '${member.enclosingLibrary.importUri}',
-      'section': member.isInstanceMember ? 'dynamically-callable' : 'callable',
+      'section': 'callable',
       if (clazz != null) 'class': clazz.name,
       'member': key,
     });
     addType(clazz);
-  }
-
-  static bool _isCoreObject(Class clazz) =>
-      clazz.name == 'Object' &&
-      '${clazz.enclosingLibrary.importUri}' == 'dart:core';
-
-  bool _hasNoSuchMethod(Class clazz, [Set<Class>? seen]) {
-    final visited = seen ?? <Class>{};
-    if (!visited.add(clazz)) return false;
-    // Object.noSuchMethod is inherited by every Dart class and does not
-    // make the VM reject a dynamic interface entry. Only an explicit
-    // override in a non-Object class makes dynamic dispatch unsafe.
-    if (!_isCoreObject(clazz) &&
-        clazz.members.any((m) => m.name.text == 'noSuchMethod'))
-      return true;
-    for (final sup in clazz.supers) {
-      if (_hasNoSuchMethod(sup.classNode, visited)) return true;
-    }
-    return false;
   }
 
   @override

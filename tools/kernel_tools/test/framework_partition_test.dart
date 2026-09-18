@@ -170,18 +170,16 @@ void main() {
     );
   });
 
-  test('reuse surface keeps instance members of Object-derived classes', () {
+  test('instance and static members referenced by carry code are callable', () {
     final reuse =
         partitionFrameworkComponent(fixture())['reuse_surface'] as List;
     check(
-      hasRow(
-        reuse,
-        'dynamically-callable',
-        hostUri,
-        type: 'Theme',
-        member: 'get:color',
-      ),
-      'instance getter on a class that only inherits Object.noSuchMethod',
+      hasRow(reuse, 'callable', hostUri, type: 'Theme', member: 'get:color'),
+      'statically typed instance getter is callable, not dynamically-callable',
+    );
+    check(
+      !reuse.any((row) => row['section'] == 'dynamically-callable'),
+      'no dynamically-callable rows: carried code has no dynamic receivers',
     );
     check(
       hasRow(reuse, 'callable', hostUri, type: 'Theme', member: 'of'),
@@ -206,17 +204,17 @@ void main() {
     );
   });
 
-  test('classes overriding noSuchMethod never become dynamically-callable', () {
-    final reuse =
-        partitionFrameworkComponent(fixture())['reuse_surface'] as List;
-    check(
-      !reuse.any(
-        (row) =>
-            row['class'] == 'Weird' && row['section'] == 'dynamically-callable',
-      ),
-      'explicit noSuchMethod override excluded',
-    );
-  });
+  test(
+    'noSuchMethod overrides do not block statically typed callable rows',
+    () {
+      final reuse =
+          partitionFrameworkComponent(fixture())['reuse_surface'] as List;
+      check(
+        hasRow(reuse, 'callable', hostUri, type: 'Weird', member: 'foo'),
+        'callable has no noSuchMethod hierarchy restriction',
+      );
+    },
+  );
 
   test('partition output is deterministic', () {
     final a = jsonEncode(partitionFrameworkComponent(fixture()));

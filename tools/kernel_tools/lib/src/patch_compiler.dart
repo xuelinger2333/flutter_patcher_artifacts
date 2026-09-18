@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:crypto/crypto.dart';
 import 'package:front_end/src/api_unstable/vm.dart';
 import 'package:vm/kernel_front_end.dart';
 import 'package:vm/transformations/prefix_library_uris.dart' as prefix;
@@ -10,6 +11,7 @@ import 'package:dart2bytecode/declarations.dart' as bc;
 import 'package:kernel/kernel.dart';
 import 'package:kernel/class_hierarchy.dart';
 import 'package:kernel/core_types.dart';
+import 'package:yaml/yaml.dart';
 import 'package:_fe_analyzer_shared/src/messages/diagnostic_message.dart'
     show getMessageCharOffset;
 import 'patch_checks.dart';
@@ -87,8 +89,49 @@ Future<Map<String, Object?>> compilePatch(List<String> args) async {
         ).hasMatch('${d['code']}'),
       ))
     return {'status': 'compile_failed', 'diagnostics': diagnostics};
+  final loadedLibraries = result.loadedLibraries.toSet();
+  Map<String, dynamic>? frameworkReuse;
+  final reuseRequest = req['framework_reuse'];
+  if (reuseRequest is Map && reuseRequest['enabled'] == true) {
+    final partitionPath = reuseRequest['partition'];
+    final carried = reuseRequest['carried'];
+    final packageName = reuseRequest['carry_package'];
+    if (partitionPath is! String ||
+        carried is! List ||
+        packageName is! String ||
+        packageName.isEmpty) {
+      throw const FormatException('Invalid framework reuse request');
+    }
+    final partition = loadYaml(await File(partitionPath).readAsString());
+    if (partition is! Map ||
+        partition['schema'] != 1 ||
+        partition['carry'] is! List ||
+        !Set<String>.from(
+          partition['carry'] as List,
+        ).containsAll((carried as List).whereType<String>())) {
+      throw const FormatException('Framework partition does not match request');
+    }
+    final requested = carried.cast<String>().toSet();
+    // Libraries outside the selected carry set are treated as host supplied.
+    // They stay in the component for name resolution but are excluded from the
+    // bytecode module and resolved through the validated dynamic interface.
+    for (final library in component.libraries) {
+      final uri = '${library.importUri}';
+      if (uri.startsWith('package:flutter/') && !requested.contains(uri)) {
+        loadedLibraries.add(library);
+      }
+    }
+    frameworkReuse = {
+      'enabled': true,
+      'partition_sha256': sha256
+          .convert(await File(partitionPath).readAsBytes())
+          .toString(),
+      'carried': requested.toList()..sort(),
+      'carry_package': packageName,
+    };
+  }
   final module = component.libraries
-      .where((l) => !result.loadedLibraries.contains(l))
+      .where((l) => !loadedLibraries.contains(l))
       .toList();
   // CFE has no character offset for an implicit super() call. Recover its
   // enclosing declaration from the same Kernel only when the match is unique.
@@ -167,7 +210,7 @@ Future<Map<String, Object?>> compilePatch(List<String> args) async {
     }
   }
   final checker = AllocationCheck(
-    result.loadedLibraries,
+    loadedLibraries,
     (allocationData['classes'] as List).cast<String>().toSet(),
   );
   for (final lib in module) {
@@ -178,7 +221,7 @@ Future<Map<String, Object?>> compilePatch(List<String> args) async {
       : inheritedCheck(
           component,
           result.classHierarchy!,
-          result.loadedLibraries,
+          loadedLibraries,
           module,
           await File(value('interface')).readAsString(),
           await File(value('compiler_interface')).readAsString(),
@@ -200,6 +243,7 @@ Future<Map<String, Object?>> compilePatch(List<String> args) async {
     'dynamic_fonts': checker.dynamicFonts,
     if (overlayTransform != null) 'overlay': overlayTransform,
     'module_libraries': module.map((l) => l.importUri.toString()).toList(),
+    if (frameworkReuse != null) 'framework_reuse': frameworkReuse,
   };
   if (req['kernel_out'] is String)
     await writeComponentToBinary(component, req['kernel_out'] as String);
@@ -222,7 +266,7 @@ Future<Map<String, Object?>> compilePatch(List<String> args) async {
         }),
       ),
     );
-    for (final lib in result.loadedLibraries) {
+    for (final lib in loadedLibraries) {
       for (final member in lib.members) keep(member);
       for (final cls in lib.classes) {
         keep(cls);
@@ -246,12 +290,10 @@ Future<Map<String, Object?>> compilePatch(List<String> args) async {
     );
     module
       ..clear()
-      ..addAll(
-        component.libraries.where((l) => !result.loadedLibraries.contains(l)),
-      );
+      ..addAll(component.libraries.where((l) => !loadedLibraries.contains(l)));
     checkEntry(module, req['seq'] as int, value('fingerprint'), tier);
     final after = AllocationCheck(
-      result.loadedLibraries,
+      loadedLibraries,
       (allocationData['classes'] as List).cast<String>().toSet(),
     );
     for (final lib in module) lib.accept(after);
@@ -261,6 +303,7 @@ Future<Map<String, Object?>> compilePatch(List<String> args) async {
     report['module_libraries'] = module
         .map((l) => l.importUri.toString())
         .toList();
+    if (frameworkReuse != null) report['framework_reuse'] = frameworkReuse;
     if (after.issues.isNotEmpty)
       return {
         'status': 'rejected',
@@ -284,7 +327,7 @@ Future<Map<String, Object?>> compilePatch(List<String> args) async {
     }
   }
   prefix.prefixLibraryUris(component, {
-    ...result.loadedLibraries,
+    ...loadedLibraries,
     ...module.where((l) => l.importUri.toString().startsWith(uriPrefix)),
   }, 'patch/${req['seq']}');
   final libraries = module.map((l) => l.importUri.toString()).toList();
@@ -305,7 +348,7 @@ Future<Map<String, Object?>> compilePatch(List<String> args) async {
       coreTypes: core,
       options: BytecodeOptions(emitSourcePositions: false),
       target: options.target!,
-      extraLoadedLibraries: result.loadedLibraries,
+      extraLoadedLibraries: loadedLibraries,
     );
   } finally {
     await sink.close();

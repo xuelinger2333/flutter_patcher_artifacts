@@ -9,6 +9,8 @@ import 'package:vm/kernel_front_end.dart' as kernelCompiler;
 import 'package:dart2bytecode/dart2bytecode.dart' as bytecode;
 
 import '../../generators/gen_platform_privates.dart' as privates;
+import 'package:flutter_patcher_kernel_tools/src/framework_partition.dart'
+    as frameworkPartition;
 import '../../generators/protocol_set/generate.dart' as protocol;
 import 'kernel_tools.dart' as shapes;
 
@@ -19,8 +21,7 @@ const usage = '''flutter_patcher_tools
                     --helper-lib <library-uri> --helper-fn <function>
   bytecode <dart2bytecode arguments...>
   gen-protocol-interface --dill <linked-flutter.dill> --out <protocol.yaml>
-  gen-platform-privates --platform <platform.dill> --out <privates.yaml>
-''';
+  gen-platform-privates --platform <platform.dill> --out <privates.yaml>\n  gen-framework-partition --platform <platform.dill> --dill <linked-flutter.dill> --out <partition.yaml>\n''';
 
 Future<void> main(List<String> args) async {
   if (args.length == 1 && (args.first == '--help' || args.first == '-h')) {
@@ -90,6 +91,7 @@ Future<void> main(List<String> args) async {
       await bytecode.main(rest);
     case 'gen-protocol-interface':
     case 'gen-platform-privates':
+    case 'gen-framework-partition':
       if (rest.length == 1 && (rest.first == '--help' || rest.first == '-h')) {
         stdout.write(usage);
         return;
@@ -97,6 +99,12 @@ Future<void> main(List<String> args) async {
       try {
         if (args.first == 'gen-protocol-interface') {
           protocol.main(rest);
+        } else if (args.first == 'gen-framework-partition') {
+          stdout.writeln(
+            jsonEncode(
+              await frameworkPartition.generateFrameworkPartition(rest),
+            ),
+          );
         } else {
           privates.main(rest);
         }

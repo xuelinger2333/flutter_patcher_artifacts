@@ -10,8 +10,9 @@ Implemented subcommands:
 - `bytecode`: forwards arguments to the patched dart2bytecode entry point.
 - `gen-protocol-interface --dill <linked-flutter.dill> --out <file>`.
 - `gen-platform-privates --platform <platform.dill> --out <file>`.
+- `gen-framework-partition --platform <platform.dill> --dill <linked-flutter.dill> --out <partition.json>` computes the deterministic host/carry split and reuse surface for WP-2.5.
 - `extract-surface --dill --own --out-iface --out-trim-iface`: WP-3 referenced surface.
-- `merge-interface`: deterministic four-part union and separate trim interface.
+- `merge-interface`: deterministic four-part union and separate trim interface; `--framework-reuse` adds the validated reuse surface.
 - `resolve-interface-hints`: module-import-scoped, ambiguity-rejecting hint resolution.
 - `trim-interface`: pinned SDK trimmer for lean validation, bundled into the same dill.
 

@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:convert';
+import 'package:yaml/yaml.dart';
 import 'package:crypto/crypto.dart';
 import 'package:kernel/kernel.dart';
 import 'extract_surface.dart';
@@ -14,7 +15,7 @@ const interfaceUsage = '''
   merge-interface --dill <linked.dill> --iface <yaml> --trim-iface <yaml> --protocol <yaml>
                   --mode lean|whole [--platform-privates <yaml>] [--additions <yaml>]
                   --out-iface <yaml> --out-trim-iface <yaml>
-                  [--out-details <json>] [--details-in <previous-json>]
+                  [--framework-reuse <partition.json>]\n                  [--out-details <json>] [--details-in <previous-json>]
   resolve-interface-hints --dill <module-index.dill> --own <pkg,...> --log <file> --out <yaml>
   trim-interface --dill <app.dill> --platform <platform.dill> --trim-iface <yaml>
                  --out <app-trim.dill> --out-platform <platform-trim.dill>
@@ -46,6 +47,7 @@ Future<Map<String, Object?>> interfaceCommand(
       '--out-trim-iface',
       '--out-details',
       '--details-in',
+      '--framework-reuse',
     },
     _ => throw FormatException('Unknown interface command: $command'),
   };
@@ -131,6 +133,7 @@ Future<Map<String, Object?>> interfaceCommand(
             '--platform-privates',
             '--additions',
             '--details-in',
+            '--framework-reuse',
           ]
           .where(options.containsKey)
           .map((v) => File(required(v)).absolute.path)
@@ -151,6 +154,32 @@ Future<Map<String, Object?>> interfaceCommand(
     if (options.containsKey('--additions'))
       'compiler-hint': read('--additions'),
   };
+  if (options.containsKey('--framework-reuse')) {
+    final value = loadYaml(
+      File(required('--framework-reuse')).readAsStringSync(),
+    );
+    if (value is! Map ||
+        value['schema'] != 1 ||
+        value['reuse_surface'] is! List) {
+      throw const FormatException('Invalid framework partition metadata');
+    }
+    final reuse = InterfaceDocument();
+    for (final raw in value['reuse_surface'] as List) {
+      if (raw is! Map ||
+          raw['library'] is! String ||
+          raw['section'] is! String ||
+          !InterfaceDocument.sections.contains(raw['section'])) {
+        throw const FormatException('Invalid framework reuse declaration');
+      }
+      reuse.add(
+        raw['section'] as String,
+        raw['library'] as String,
+        type: raw['class'] as String?,
+        member: raw['member'] as String?,
+      );
+    }
+    inputs['framework-reuse'] = reuse;
+  }
   final doc = InterfaceDocument();
   for (final input in inputs.values) {
     doc.merge(input);

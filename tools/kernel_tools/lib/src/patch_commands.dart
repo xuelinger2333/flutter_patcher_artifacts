@@ -5,12 +5,13 @@ import 'package:kernel/class_hierarchy.dart';
 import 'package:kernel/core_types.dart';
 import 'package:dart2bytecode/bytecode_serialization.dart';
 import 'package:dart2bytecode/declarations.dart' as bc;
+import 'package:yaml/yaml.dart';
 import 'patch_checks.dart';
 
 const patchCheckUsage =
     '''  check-allocations --dill <linked-analysis.dill> --own <packages> --allocated <allocate_finalized.json>
   check-inherited --dill <linked-analysis.dill> --own <packages> --iface <yaml> --compiler-interface <json>
-  verify-structure --bytecode <module.bc> --expect-prefix <package:patch.seq.> --forbid-prefix <package:app/>
+  verify-structure --bytecode <module.bc> --expect-prefix <package:patch.seq.> --forbid-prefix <package:app/> [--framework-reuse <partition.json>] [--carry-package <package:patch.seq.flutter_carry>] [--expected-carried <uri,...>]
 ''';
 
 Future<Map<String, Object?>> patchCheckCommand(
@@ -18,7 +19,14 @@ Future<Map<String, Object?>> patchCheckCommand(
   List<String> args,
 ) async {
   final allowed = command == 'verify-structure'
-      ? {'--bytecode', '--expect-prefix', '--forbid-prefix'}
+      ? {
+          '--bytecode',
+          '--expect-prefix',
+          '--forbid-prefix',
+          '--framework-reuse',
+          '--carry-package',
+          '--expected-carried',
+        }
       : command == 'check-allocations'
       ? {'--dill', '--own', '--allocated'}
       : {'--dill', '--own', '--iface', '--compiler-interface'};
@@ -49,18 +57,48 @@ Future<Map<String, Object?>> patchCheckCommand(
     final expected = need('--expect-prefix'),
         forbidden = need('--forbid-prefix');
     final count = uris.where((u) => u.startsWith(forbidden)).length;
+    var reuseOk = true;
+    Set<String> expectedCarry = {};
+    if (options.containsKey('--framework-reuse')) {
+      final partition = loadYaml(
+        await File(need('--framework-reuse')).readAsString(),
+      );
+      final package = options['--carry-package'];
+      if (partition is! Map ||
+          partition['schema'] != 1 ||
+          partition['carry'] is! List ||
+          package == null ||
+          package.isEmpty) {
+        throw const FormatException('Invalid framework reuse structure input');
+      }
+      final listedCarry = options['--expected-carried'] == null
+          ? (partition['carry'] as List).cast<String>()
+          : options['--expected-carried']!.split(',').where((v) => v.isNotEmpty);
+      expectedCarry = {
+        for (final uri in listedCarry)
+          '$package/${uri.substring('package:flutter/'.length)}',
+      };
+      final actualCarry = uris.where((u) => u.startsWith('$package/')).toSet();
+      reuseOk =
+          actualCarry.length == expectedCarry.length &&
+          actualCarry.containsAll(expectedCarry) &&
+          !uris.any((u) => u.startsWith('package:flutter/'));
+    }
     final ok =
         uris.isNotEmpty &&
         count == 0 &&
         uris.every((u) => u.startsWith(expected)) &&
         decoded.dynModuleEntryPoint != null &&
-        decoded.sourcePositions.isEmpty;
+        decoded.sourcePositions.isEmpty &&
+        reuseOk;
     return {
       'ok': ok,
       'counts': {
         'libraries': uris.length,
         'forbidden': count,
         'source_positions': decoded.sourcePositions.length,
+        'framework_reuse': reuseOk,
+        'expected_carried': expectedCarry.length,
       },
       'libraries': uris,
     };

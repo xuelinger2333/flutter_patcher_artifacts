@@ -118,6 +118,26 @@ def transform_smoke(dart, release, version, fixtures, work):
         require(result['verdict'] == verdict, 'Transformation changed resource-bypass classification')
 
 
+def partition_smoke(dart, release, version, flutter, fixtures, work):
+    """WP-2.5: partition generation is deterministic and structurally complete."""
+    import json
+    tool = release / names(version)['tools']
+    platform = flutter / 'bin/cache/artifacts/engine/common/flutter_patched_sdk_product/platform_strong.dill'
+    first = work / 'framework-partition-a.json'
+    second = work / 'framework-partition-b.json'
+    for output in (first, second):
+        run(dart, tool, 'gen-framework-partition', '--platform', platform,
+            '--dill', fixtures / 'shape1.dill', '--flutter-version', version,
+            '--out', output)
+    a, b = json.loads(first.read_text()), json.loads(second.read_text())
+    require(a == b, 'Framework partition output is not deterministic')
+    require(a['schema'] == 1 and isinstance(a['host'], list) and
+            isinstance(a['carry'], list) and isinstance(a['libraries'], list),
+            'Framework partition metadata is incomplete')
+    return {'schema': a['schema'], 'host': len(a['host']), 'carry': len(a['carry']),
+            'sha256': sha256(first)}
+
+
 def baseline_smoke(dart, tool, flutter, source, work):
     """Verify the CI-built dill can emit an unlinked application kernel."""
     fixtures = source / 'tools/kernel_tools/test/fixtures'
@@ -181,6 +201,7 @@ def build(args):
     run(dart, f'--packages={config}', package / 'test/interface_test.dart', cwd=package)
     run(dart, f'--packages={config}', package / 'test/build_inspection_test.dart', cwd=package)
     run(dart, f'--packages={config}', package / 'test/patch_checks_test.dart', cwd=package)
+    run(dart, f'--packages={config}', package / 'test/framework_partition_test.dart', cwd=package)
     run(flutter / 'bin/flutter', '--suppress-analytics', 'precache', '--android')
     fixtures = compile_fixtures(flutter, source)
     answers = read_json(package / 'test/fixtures/expected.json')
@@ -203,6 +224,8 @@ def build(args):
         create(release, args.version, metadata, commit, pin['dart_commit'], patches_record)
     compare(work / 'first', work / 'second')
     transform_smoke(dart, work / 'first', args.version, fixtures, work)
+    partition_verification = partition_smoke(dart, work / 'first', args.version,
+                                             flutter, fixtures, work)
     baseline_smoke(dart, work / 'first' / names(args.version)['tools'], flutter, source, work)
     from patch_smoke import exercise as exercise_patch
     patch_verification = exercise_patch(dart, work / 'first' / names(args.version)['tools'],
@@ -231,6 +254,7 @@ def build(args):
                'builder_repo_commit': commit, 'flutter_version': args.version,
                'wp3_interfaces': interface_verification, 'wp6_patch': patch_verification,
                'wp7_resources': resource_verification,
+               'wp25_partition': partition_verification,
                'wp9_fault_modules': read_json(work / 'wp9-fault-modules/modules.json')})
     shutil.copytree(work / 'first', output)
     print(f'TOOLS_RELEASE_READY: {output}; A11 passed; {elapsed} seconds', flush=True)

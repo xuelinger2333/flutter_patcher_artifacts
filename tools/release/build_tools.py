@@ -169,7 +169,9 @@ def build(args):
     require(not git('status', '--porcelain', '--untracked-files=normal'), 'Commit source changes before building')
     commit = git('rev-parse', 'HEAD')
     flutter = args.flutter.resolve()
-    managed = Path.home() / '.flutter_patcher'
+    # FLUTTER_PATCHER_MANAGED lets a runner keep the managed stock SDK and work
+    # tree off the profile drive (Windows); the containment rules are unchanged.
+    managed = Path(os.environ.get('FLUTTER_PATCHER_MANAGED') or Path.home() / '.flutter_patcher')
     require(flutter.is_relative_to(managed.resolve()), 'Use a managed stock Flutter under ~/.flutter_patcher')
     work, output = args.work.resolve(), args.out.resolve()
     require(work.is_relative_to(managed.resolve()) or work.is_relative_to(REPO / '.dart_tool/flutter_patcher'),

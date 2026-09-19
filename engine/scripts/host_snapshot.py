@@ -228,6 +228,14 @@ class Pipeline:
                 f'--id Microsoft.WindowsSDK.{pinned.group(1)[:-2]}); installed: '
                 + ', '.join(p.name for p in kits.glob('10.*')))
         self.toolchain['windows_sdk'] = pinned.group(1)
+        # GN's default toolchain copies the target CPU's CRT and debugger DLLs
+        # even for an Android arm64 build, so the VS "ARM64 build tools"
+        # component and the SDK "Debugging Tools for Windows" must be present.
+        studio = Path(self.toolchain['visual_studio'])
+        require(any((studio / 'VC/Redist/MSVC').glob('*/arm64/*/msvcp140.dll')),
+                'Visual Studio component VC.Tools.ARM64 (ARM64 build tools, provides the arm64 CRT redist) is missing')
+        require((kits.parent / 'Debuggers/arm64/dbghelp.dll').is_file(),
+                'Windows SDK feature "Debugging Tools for Windows" (OptionId.WindowsDesktopDebuggers) is missing')
 
     def build_snapshot(self, jobs):
         target, output = hosts.GEN_SNAPSHOT_BUILD[self.host]

@@ -11,6 +11,7 @@ import uuid
 import zipfile
 
 SCRIPT = Path(__file__).resolve().parents[1] / 'artifacts.py'
+sys.path.insert(0, str(SCRIPT.parent))  # artifacts.py imports hosts
 SPEC = importlib.util.spec_from_file_location('artifacts', SCRIPT)
 artifacts = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(artifacts)

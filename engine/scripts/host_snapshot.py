@@ -35,6 +35,15 @@ VS_VERSIONS = (('18', '2026'), ('2022', '2022'))
 VS_PRODUCTS = ('Enterprise', 'Professional', 'Community', 'Preview', 'Insiders', 'BuildTools')
 
 
+def write_patch(path, diff):
+    """Byte-exact so `git apply --reverse` accepts it on Windows (no CRLF translation)."""
+    Path(path).write_bytes((diff + '\n').encode('utf-8'))
+
+
+def read_patch(path):
+    return Path(path).read_bytes().decode('utf-8').rstrip('\n')
+
+
 class Pipeline:
     def __init__(self, home):
         self.host = hosts.current()
@@ -191,7 +200,7 @@ class Pipeline:
         dart = self.src / 'flutter/third_party/dart'
         require((dart / '.git').exists(), 'recorded patched Dart checkout missing')
         current = self.git(dart, 'diff', '--full-index', '--binary', 'HEAD')
-        require(current == previous.read_text(encoding='utf-8').rstrip('\n'), 'cached patch differs from recorded patch')
+        require(current == read_patch(previous), 'cached patch differs from recorded patch')
         self.run('git', '-C', dart, 'apply', '--reverse', '--check', previous)
         self.run('git', '-C', dart, 'apply', '--reverse', previous)
         previous.unlink()
@@ -205,17 +214,31 @@ class Pipeline:
         self.run('git', '-C', dart, 'apply', *patches)
         applied = self.git(dart, 'diff', '--full-index', '--binary', 'HEAD')
         require(bool(applied), 'engine patches made no changes')
-        (self.cache / 'applied.patch').write_text(applied + '\n', encoding='utf-8')
+        write_patch(self.cache / 'applied.patch', applied)
         return applied
+
+    def check_windows_sdk(self):
+        """The engine pins one Windows SDK for local builds; fail before GN if it is absent."""
+        setup = (self.src / 'build/toolchain/win/setup_toolchain.py').read_text(encoding='utf-8')
+        pinned = re.search(r"^SDK_VERSION = '([0-9.]+)'$", setup, re.M)
+        require(pinned is not None, 'cannot read the pinned Windows SDK version from setup_toolchain.py')
+        kits = Path(self.env.get('PROGRAMFILES(X86)', 'C:/Program Files (x86)')) / 'Windows Kits/10/Include'
+        require((kits / pinned.group(1)).is_dir(),
+                f'Windows SDK {pinned.group(1)} is required by this engine (winget install '
+                f'--id Microsoft.WindowsSDK.{pinned.group(1)[:-2]}); installed: '
+                + ', '.join(p.name for p in kits.glob('10.*')))
+        self.toolchain['windows_sdk'] = pinned.group(1)
 
     def build_snapshot(self, jobs):
         target, output = hosts.GEN_SNAPSHOT_BUILD[self.host]
+        if self.windows:
+            self.check_windows_sdk()
         self.run(self.python(), self.src / 'flutter/tools/gn', *GN_ARGS, cwd=self.src)
         args = (self.src / OUT / 'args.gn').read_text()
         require(re.search(r'^dart_dynamic_modules = true$', args, re.M), 'dart_dynamic_modules is not true')
+        # DEPS places ninja at the checkout root (third_party/ninja), beside .gclient.
         ninja = self.engine / 'third_party/ninja' / hosts.exe(self.host, 'ninja')
-        if not ninja.is_file():
-            ninja = self.depot_tool('ninja')
+        require(ninja.is_file(), f'ninja missing from the DEPS checkout: {ninja}')
         self.run(ninja, '-C', self.src / OUT, '-j', jobs, target, cwd=self.src)
         binary = self.src / OUT / output
         require(binary.is_file() and binary.stat().st_size > 0, f'build artifact missing: {output}')
@@ -308,6 +331,7 @@ def main():
     add.add_argument('release')
     add.add_argument('bundle')
     args = parser.parse_args()
+    pipeline = None
     try:
         pipeline = Pipeline(args.home)
         if args.command == 'fetch':
@@ -319,6 +343,9 @@ def main():
     except (InvalidArtifact, OSError, ValueError, KeyError, subprocess.CalledProcessError, hosts.HostError) as error:
         print(f'HOST_SNAPSHOT_FAILED: {error}', file=sys.stderr)
         return 1
+    finally:
+        if pipeline is not None:
+            pipeline.log.close()
     return 0
 
 

@@ -55,7 +55,7 @@ def read_json(path):
 def write_json(path, value):
     path = Path(path)
     pending = path.with_suffix(path.suffix + '.tmp')
-    pending.write_text(json.dumps(value, indent=2, sort_keys=True) + '\n')
+    pending.write_bytes((json.dumps(value, indent=2, sort_keys=True) + '\n').encode('utf-8'))
     pending.replace(path)
 
 
@@ -296,7 +296,8 @@ def validate_bundle(directory):
     directory = Path(directory)
     bundle = read_json(directory / 'host.manifest.json')
     require(isinstance(bundle, dict), 'bundle manifest must be a JSON object')
-    require(bundle.get('schema') == 1 and bundle.get('kind') == 'host_snapshot', 'unsupported bundle schema')
+    require(type(bundle.get('schema')) is int and bundle['schema'] == 1
+            and bundle.get('kind') == 'host_snapshot', 'unsupported bundle schema')
     require(re.fullmatch(r'\d+\.\d+\.\d+', bundle.get('flutter_version', '')), 'invalid Flutter stable version')
     for key in ('engine_commit', 'engine_stamp', 'builder_repo_commit', 'depot_tools_rev'):
         require(hex_value(bundle.get(key), 40), f'invalid {key}')
@@ -339,9 +340,16 @@ def attach(directory, bundle_dir):
               'verify': {'snapshot': 'passed', 'device': 'pending', 'device_reason': None}}
     if bundle.get('toolchain') is not None:
         record['toolchain'] = bundle['toolchain']
+    original = read_json(directory / 'engine.manifest.json')
     manifest['files'].append(record)
     write_json(directory / 'engine.manifest.json', manifest)
-    validate(directory)
+    try:
+        validate(directory)
+    except InvalidArtifact:
+        # Leave the release exactly as it was; a half-attached host is worse than none.
+        (directory / name).unlink()
+        write_json(directory / 'engine.manifest.json', original)
+        raise
     return manifest
 
 

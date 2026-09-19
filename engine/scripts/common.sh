@@ -7,7 +7,7 @@ WP1_ENGINE="$WP1_CACHE/engine"
 WP1_DEPOT="$WP1_CACHE/depot_tools"
 WP1_SRC="$WP1_ENGINE/engine/src"
 export DEPOT_TOOLS_UPDATE=0
-# Primary host identity (WP-2.6 ¡ì3.2); secondary hosts use host_snapshot.py.
+# Primary host identity (WP-2.6 section 3.2); secondary hosts use host_snapshot.py.
 WP1_HOST=linux-x64
 WP1_GEN_SNAPSHOT="gen_snapshot-$WP1_HOST"
 WP1_SDK_TOOLCHAIN="bin/cache/artifacts/engine/$WP1_HOST"

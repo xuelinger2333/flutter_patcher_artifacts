@@ -38,6 +38,7 @@ def record_result(release, manifest, host, result):
     if manifest['schema'] == 1 or host == hosts.PRIMARY:
         manifest['verify'] = dict(result)
     write_json(release / 'engine.manifest.json', manifest)
+    validate(release)
 
 
 def verify(release, sdk, work):

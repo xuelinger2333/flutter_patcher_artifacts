@@ -1,0 +1,22 @@
+diff --git a/runtime/vm/interpreter.cc b/runtime/vm/interpreter.cc
+index 5045812c7cb70ae612fbdd54caf3595c59251a44..1cf17fe58104f7573ed8d32512039a20e53252f2 100644
+--- a/runtime/vm/interpreter.cc
++++ b/runtime/vm/interpreter.cc
+@@ -2078,7 +2078,7 @@ SwitchDispatch:
+ #undef TARGET
+ #endif  // !defined(PRODUCT)
+     default:
+-      FATAL1("Undefined opcode: %d\n", op);
++      FATAL("Undefined opcode: %d\n", op);
+   }
+ #if !defined(PRODUCT)
+ SwitchDispatchNoSingleStep:
+@@ -2089,7 +2089,7 @@ SwitchDispatchNoSingleStep:
+     KERNEL_BYTECODES_LIST(TARGET)
+ #undef TARGET
+     default:
+-      FATAL1("Undefined opcode: %d\n", op);
++      FATAL("Undefined opcode: %d\n", op);
+   }
+ #endif  // !defined(PRODUCT)
+ #endif  // defined(DART_HAS_COMPUTED_GOTO)

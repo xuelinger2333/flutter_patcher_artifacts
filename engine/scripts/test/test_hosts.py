@@ -180,6 +180,19 @@ class AttachTests(unittest.TestCase):
         artifacts.write_json(self.release / 'engine.manifest.json', manifest)
         artifacts.validate(self.release, publishable=True)
 
+    def test_host_patches_are_recorded_but_not_part_of_the_shared_identity(self):
+        self.write_bundle({**self.host_manifest, 'host_patches': [{'file': '0001-win.patch', 'sha256': 'a' * 64}]})
+        manifest = artifacts.attach(self.release, self.bundle)
+        record = artifacts.snapshot_record(manifest, 'windows-x64')
+        self.assertEqual(record['host_patches'], [{'file': '0001-win.patch', 'sha256': 'a' * 64}])
+        self.assertEqual(manifest['patches'], self.identity['patches'])
+        artifacts.validate(self.release)
+        for value in ([{'file': 'x.txt', 'sha256': 'a' * 64}], 'none', [{'file': '0001-win.patch'}]):
+            with self.subTest(value=value):
+                self.write_bundle({**self.host_manifest, 'host_patches': value})
+                with self.assertRaises((ValueError, TypeError)):
+                    artifacts.validate_bundle(self.bundle)
+
     def test_comparable_ignores_secondary_timestamps(self):
         manifest = artifacts.attach(self.release, self.bundle)
         other = copy.deepcopy(manifest)

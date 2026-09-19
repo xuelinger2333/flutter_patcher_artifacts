@@ -205,10 +205,19 @@ class Pipeline:
         self.run('git', '-C', dart, 'apply', '--reverse', previous)
         previous.unlink()
 
+    def host_patch_files(self):
+        return sorted((REPO / 'engine_patches' / self.host).glob('*.patch'))
+
+    def host_patch_records(self):
+        return [{'file': path.name, 'sha256': sha256(path)} for path in self.host_patch_files()]
+
     def apply_patches(self):
         require(not (self.cache / 'applied.patch').exists(), 'fetch must leave an unpatched checkout')
         dart = self.src / 'flutter/third_party/dart'
-        patches = sorted((REPO / 'engine_patches').glob('*.patch'))
+        # Shared patches bind every host to the same engine semantics; host-only
+        # patches (engine_patches/<host>/) fix code paths that only this host's
+        # toolchain compiles and are recorded separately in the manifest.
+        patches = sorted((REPO / 'engine_patches').glob('*.patch')) + self.host_patch_files()
         require(bool(patches), 'no engine patches')
         self.run('git', '-C', dart, 'apply', '--check', *patches)
         self.run('git', '-C', dart, 'apply', *patches)
@@ -300,7 +309,7 @@ class Pipeline:
             'flutter_version': version, 'engine_commit': resolved['engine_commit'],
             'engine_stamp': resolved['engine_stamp'], 'builder_repo_commit': builder_commit,
             'depot_tools_rev': (REPO / 'DEPOT_TOOLS_REV').read_text().strip(),
-            'patches': patch_records(REPO),
+            'patches': patch_records(REPO), 'host_patches': self.host_patch_records(),
             'built_at': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
             'file': {'name': name, 'size': (out / name).stat().st_size, 'sha256': sha256(out / name)},
             'verify': {'snapshot': 'passed'}, 'toolchain': self.toolchain, 'run': self.run_dir.name,

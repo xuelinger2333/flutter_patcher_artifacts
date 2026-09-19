@@ -92,6 +92,13 @@ def check_patches(value):
     require(names == sorted(set(names)), 'patch order/duplicates invalid')
 
 
+def check_host_patches(value):
+    """Host-only patches (engine_patches/<host>/) are optional and may be empty."""
+    if value is None or value == []:
+        return
+    check_patches(value)
+
+
 def check_verify(verify, what='verify'):
     require(isinstance(verify, dict), f'missing {what} result')
     require(verify.get('snapshot') in ('pending', 'passed'), f'{what}: invalid snapshot result')
@@ -147,6 +154,7 @@ def check_snapshot_record(directory, record, schema, seen_hosts):
         timestamp(record.get('built_at'))
         require(hex_value(record.get('builder_repo_commit'), 40), f'{host}: invalid builder commit')
         check_toolchain(record.get('toolchain'))
+        check_host_patches(record.get('host_patches'))
     check_host_file(directory, record, host)
 
 
@@ -312,6 +320,7 @@ def validate_bundle(directory):
     require(isinstance(verify, dict) and verify.get('snapshot') in ('pending', 'passed'),
             'invalid snapshot result')
     check_toolchain(bundle.get('toolchain'))
+    check_host_patches(bundle.get('host_patches'))
     return bundle
 
 
@@ -340,6 +349,8 @@ def attach(directory, bundle_dir):
               'verify': {'snapshot': 'passed', 'device': 'pending', 'device_reason': None}}
     if bundle.get('toolchain') is not None:
         record['toolchain'] = bundle['toolchain']
+    if bundle.get('host_patches'):
+        record['host_patches'] = bundle['host_patches']
     original = read_json(directory / 'engine.manifest.json')
     manifest['files'].append(record)
     write_json(directory / 'engine.manifest.json', manifest)

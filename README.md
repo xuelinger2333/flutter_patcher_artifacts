@@ -8,7 +8,8 @@ version through the CLI's `flutter --version --machine` detection. Unsupported
 versions fail; users are not asked to build an engine or tool snapshot.
 
 The engine and tools workflows run independently. Engine builds use a dedicated
-Linux x64 self-hosted runner; tool snapshots are compiled by hosted CI. They upload
+Linux x64 self-hosted runner plus one self-hosted runner per secondary host
+(Windows x64 today) that contributes only its `gen_snapshot`; tool snapshots are compiled by hosted CI. They upload
 to an existing, user-created `flutter-<version>` Release only when the workflow's
 `publish` input is true (default false). The uploaders never create tags, create
 releases, replace existing assets, or publish drafts.
@@ -16,7 +17,8 @@ releases, replace existing assets, or publish drafts.
 Release assets:
 
 - `libflutter-arm64_v8a-release.jar`
-- `gen_snapshot-linux-x64`
+- `gen_snapshot-linux-x64` (primary host)
+- `gen_snapshot-windows-x64.exe` (secondary host, attached; see engine/README.md host matrix)
 - `flutter_embedding_release.jar` (pass-through pending WP-5 verification)
 - `engine.manifest.json`
 - `flutter_patcher_tools-<version>.dill`

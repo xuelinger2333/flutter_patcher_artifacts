@@ -60,7 +60,8 @@ class SourceTests(unittest.TestCase):
     def test_wrong_host_and_dirty_builder_fail(self):
         for body, message in [
             ('uname() { echo Darwin; }; assert_host', 'requires Linux x86_64'),
-            ('WP1_HOME=relative; assert_host', 'absolute managed directory'),
+            ('uname() { [[ $1 == -s ]] && echo Linux || echo x86_64; }; WP1_HOME=relative; assert_host',
+             'absolute managed directory'),
             ('WP1_REPO="$2"; assert_clean_builder', 'builder repository is dirty'),
         ]:
             (self.root / 'untracked.txt').write_text('deliberately dirty')

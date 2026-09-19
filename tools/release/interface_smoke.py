@@ -4,6 +4,10 @@ import json
 import hashlib
 from pathlib import Path
 import subprocess
+import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'engine/scripts'))
+import hosts  # noqa: E402
 
 
 def exercise(dart, entry, flutter, fixtures, source, work):
@@ -26,8 +30,9 @@ def exercise(dart, entry, flutter, fixtures, source, work):
     module_index = work / 'module-index.dill'
     index_entry = work / 'index-entry.dart'
     index_entry.write_text(f'import {json.dumps(module.as_uri())};\nvoid main() {{}}\n')
-    frontend = flutter / 'bin/cache/artifacts/engine/linux-x64/frontend_server_aot.dart.snapshot'
-    subprocess.run([str(flutter / 'bin/cache/dart-sdk/bin/dartaotruntime'), str(frontend),
+    host = hosts.current()
+    frontend = flutter / hosts.toolchain_file(host, 'frontend_server_aot.dart.snapshot')
+    subprocess.run([str(hosts.dart_binary(host, flutter, 'dartaotruntime')), str(frontend),
                     '--sdk-root', str(platform.parent) + '/', '--target', 'flutter',
                     '--no-aot', '--no-tfa', '--link-platform', '--packages', str(packages),
                     '--output-dill', str(module_index), str(index_entry)], check=True)

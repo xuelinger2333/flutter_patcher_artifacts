@@ -1,3 +1,5 @@
 self-hosted-runner:
   labels:
     - engine-builder
+    - Windows
+    - X64

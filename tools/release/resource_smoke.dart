@@ -138,7 +138,8 @@ void main() {
     };
     final input = File('${work.path}/$tier.json');
     await input.writeAsString(jsonEncode(req));
-    final result = await Process.run('$sdk/bin/cache/dart-sdk/bin/dart', [
+    final dart = '$sdk/bin/cache/dart-sdk/bin/dart${Platform.isWindows ? '.exe' : ''}';
+    final result = await Process.run(dart, [
       tool,
       'compile-patch',
       '--request',

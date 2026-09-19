@@ -70,7 +70,7 @@ class ArtifactTests(unittest.TestCase):
                          (self.build / 'flutter_embedding_release.jar').read_bytes())
 
     def test_schema_unknown_and_boolean_rejected(self):
-        for schema in (2, True, '1'):
+        for schema in (3, True, '1'):
             with self.subTest(schema=schema):
                 self.reject(lambda m: m.update(schema=schema))
 
@@ -135,6 +135,10 @@ class ArtifactTests(unittest.TestCase):
             artifacts.validate(self.out, publishable=True)
         self.manifest['verify'] = {'snapshot': 'passed', 'device': 'skipped',
                                    'device_reason': 'no_android_device'}
+        self.write(self.manifest)
+        with self.assertRaisesRegex(ValueError, 'linux-x64: gen_snapshot verification pending'):
+            artifacts.validate(self.out, publishable=True)
+        self.manifest['files'][2]['verify'] = dict(self.manifest['verify'])
         self.write(self.manifest)
         with self.assertRaisesRegex(ValueError, 'compressed build log'):
             artifacts.validate(self.out, publishable=True)

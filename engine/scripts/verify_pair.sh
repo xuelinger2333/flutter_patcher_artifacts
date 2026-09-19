@@ -21,13 +21,13 @@ PY
 cp "$WP1_REPO/engine/fixtures/pair/main.dart" "$WORK/main.dart"
 printf '{"configVersion":2,"packages":[]}\n' > "$WORK/package_config.json"
 "$SDK/bin/cache/dart-sdk/bin/dartaotruntime" \
-  "$SDK/bin/cache/artifacts/engine/linux-x64/frontend_server_aot.dart.snapshot" \
+  "$SDK/$WP1_SDK_TOOLCHAIN/frontend_server_aot.dart.snapshot" \
   --sdk-root "$SDK/bin/cache/artifacts/engine/common/flutter_patched_sdk_product/" \
   --target flutter --target-os android --aot --tfa \
   --packages "$WORK/package_config.json" --output-dill "$WORK/main.dill" "$WORK/main.dart"
 [[ -s $WORK/main.dill ]] || die 'minimal kernel not produced'
-"$RELEASE/gen_snapshot-linux-x64" --version
-"$RELEASE/gen_snapshot-linux-x64" --snapshot_kind=app-aot-elf --elf="$WORK/libapp.so" "$WORK/main.dill"
+"$RELEASE/$WP1_GEN_SNAPSHOT" --version
+"$RELEASE/$WP1_GEN_SNAPSHOT" --snapshot_kind=app-aot-elf --elf="$WORK/libapp.so" "$WORK/main.dill"
 [[ -s $WORK/libapp.so ]] || die 'minimal AOT snapshot not produced'
 python3 "$WP1_REPO/engine/scripts/pair_device.py" "$RELEASE" "$SDK" "$WORK"
 python3 "$WP1_REPO/engine/scripts/artifacts.py" validate "$RELEASE"

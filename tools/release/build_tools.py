@@ -12,6 +12,12 @@ import time
 from tools_artifacts import compare, create, names, read_json, require, sha256, write_json
 
 REPO = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO / 'engine/scripts'))
+import hosts  # noqa: E402
+
+# The dill is host-independent; only the launcher, Dart binaries and the SDK
+# toolchain directory differ per host (WP-2.6 phase C).
+HOST = hosts.current()
 SDK_PACKAGES = ('kernel', 'front_end', '_fe_analyzer_shared', 'vm', 'dart2bytecode', 'build_integration')
 
 
@@ -45,13 +51,13 @@ def source_overrides(source, sdk):
 def compile_fixtures(flutter, source):
     fixtures = source / 'tools/kernel_tools/test/fixtures'
     shutil.copytree(fixtures / 'shapes', fixtures / 'lib')
-    run(flutter / 'bin/flutter', '--suppress-analytics', 'pub', 'get', cwd=fixtures)
+    run(hosts.flutter_launcher(HOST, flutter), '--suppress-analytics', 'pub', 'get', cwd=fixtures)
     platform = flutter / 'bin/cache/artifacts/engine/common/flutter_patched_sdk_product'
-    frontend = flutter / 'bin/cache/artifacts/engine/linux-x64/frontend_server_aot.dart.snapshot'
+    frontend = flutter / hosts.toolchain_file(HOST, 'frontend_server_aot.dart.snapshot')
     output = fixtures / '.dart_tool/flutter_patcher'
     output.mkdir(parents=True)
     for i in range(1, 10):
-        run(flutter / 'bin/cache/dart-sdk/bin/dartaotruntime', frontend,
+        run(hosts.dart_binary(HOST, flutter, 'dartaotruntime'), frontend,
             '--sdk-root', str(platform) + '/', '--target', 'flutter',
             '--no-aot', '--no-tfa', '--link-platform',
             '--packages', fixtures / '.dart_tool/package_config.json',
@@ -156,7 +162,7 @@ def baseline_smoke(dart, tool, flutter, source, work):
 
 
 def build(args):
-    require(sys.platform == 'linux', 'WP-1b build requires Linux')
+    require(HOST in hosts.SUPPORTED, f'WP-1b build host not in the support matrix: {HOST}')
     versions = (REPO / 'supported_versions.txt').read_text().splitlines()
     require(args.version in versions, 'Unsupported Flutter version')
     pin = read_json(REPO / 'tools/versions.json')[args.version]
@@ -194,7 +200,7 @@ def build(args):
     source_overrides(source, sdk)
     package = source / 'tools/kernel_tools'
     shutil.copyfile(source / f'tools/locks/{args.version}.lock', package / 'pubspec.lock')
-    dart = flutter / 'bin/cache/dart-sdk/bin/dart'
+    dart = hosts.dart_binary(HOST, flutter)
     run(dart, 'pub', 'get', '--enforce-lockfile', cwd=package)
     config = package / '.dart_tool/package_config.json'
     run(dart, f'--packages={config}', package / 'test/detect_shape_test.dart', cwd=package)
@@ -202,7 +208,7 @@ def build(args):
     run(dart, f'--packages={config}', package / 'test/build_inspection_test.dart', cwd=package)
     run(dart, f'--packages={config}', package / 'test/patch_checks_test.dart', cwd=package)
     run(dart, f'--packages={config}', package / 'test/framework_partition_test.dart', cwd=package)
-    run(flutter / 'bin/flutter', '--suppress-analytics', 'precache', '--android')
+    run(hosts.flutter_launcher(HOST, flutter), '--suppress-analytics', 'precache', '--android')
     fixtures = compile_fixtures(flutter, source)
     answers = read_json(package / 'test/fixtures/expected.json')
     require(len(answers) == 9, 'Nine fixture answers required')
@@ -262,7 +268,7 @@ def build(args):
 
 def read_flutter(flutter):
     import json
-    return json.loads(run(flutter / 'bin/flutter', '--suppress-analytics', '--version', '--machine', capture=True))
+    return json.loads(run(hosts.flutter_launcher(HOST, flutter), '--suppress-analytics', '--version', '--machine', capture=True))
 
 
 if __name__ == '__main__':

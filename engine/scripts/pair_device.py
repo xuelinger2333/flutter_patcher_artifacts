@@ -69,7 +69,7 @@ def verify(release, sdk, work):
     flutter = hosts.flutter_launcher(host, sdk)
     app = work / 'app'
     run(flutter, '--suppress-analytics', 'create', '--platforms=android',
-        '--org=dev.flutterpatcher.wp1', '--project-name=engine_pair', app, env=env)
+        '--org=dev.flutterpatcher', '--project-name=engine_pair', app, env=env)
     shutil.copyfile(work / 'main.dart', app / 'lib/main.dart')
     run(flutter, '--suppress-analytics', 'build', 'apk', '--release',
         '--target-platform=android-arm64', cwd=app, env=env)
@@ -103,10 +103,10 @@ def verify(release, sdk, work):
     keystore = work / 'pair-test.jks'
     run(hosts.exe(host, 'keytool'), '-genkeypair', '-noprompt', '-keystore', keystore, '-storepass', 'android',
         '-keypass', 'android', '-alias', 'pair', '-keyalg', 'RSA', '-validity', '1',
-        '-dname', 'CN=WP1 Test')
+        '-dname', 'CN=flutter_patcher engine pair test')
     run(build_tools / hosts.script(host, 'apksigner'), 'sign', '--ks', keystore, '--ks-pass', 'pass:android',
         '--key-pass', 'pass:android', '--out', signed, aligned)
-    package = 'dev.flutterpatcher.wp1.engine_pair'
+    package = 'dev.flutterpatcher.engine_pair'
     # This dedicated package is created by this verification only.
     run(*command, 'install', '-r', signed)
     try:
@@ -118,7 +118,7 @@ def verify(release, sdk, work):
             require(bool(pid), 'pair app exited')
             log = run(*command, 'logcat', '-d', '--pid=' + pid, '-v', 'brief', capture=True)
             (work / 'device.log').write_text(log, encoding='utf-8', errors='replace')
-            if 'WP1_PAIR_OK' in log:
+            if 'PAIR_OK' in log:
                 record_result(release, manifest, host, {'snapshot': 'passed', 'device': 'passed',
                                                         'device_reason': None})
                 print('DEVICE_PAIR_PASSED')

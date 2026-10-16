@@ -22,7 +22,7 @@ def exercise(dart, entry, flutter, fixtures, source, work):
     index = fixtures / 'shape1.dill'
     packages = source / 'tools/kernel_tools/test/fixtures/.dart_tool/package_config.json'
     module = source / 'tools/kernel_tools/test/fixtures/interfaces/module.dart'
-    call('extract-surface', '--dill', index, '--own', 'wp1b_shapes',
+    call('extract-surface', '--dill', index, '--own', 'shape_fixtures',
          '--out-iface', work / 'refs.yaml', '--out-trim-iface', work / 'refs-trim.yaml')
     call('gen-protocol-interface', '--dill', index, '--out', work / 'protocol.yaml')
     call('gen-platform-privates', '--platform', platform, '--out', work / 'privates.yaml')
@@ -73,7 +73,7 @@ def exercise(dart, entry, flutter, fixtures, source, work):
                 imports = ['--import-dill', imported]
             args = ['bytecode', '--platform', validation_platform, *imports, '--target', 'flutter',
                     '--packages', packages, '--validate', iface, '--aot-only',
-                    '--prefix-library-uris', 'wp3_validation', '-o', output]
+                    '--prefix-library-uris', 'interface_validation', '-o', output]
             if mode == 'whole':
                 args += ['--allow-dynamic-calls-in-dynamic-modules',
                          '--extra-selectors-allowed-in-dynamic-calls=-,+,*,get:index,relativeError,absoluteError']
@@ -90,7 +90,7 @@ def exercise(dart, entry, flutter, fixtures, source, work):
             if iteration == 5:
                 raise RuntimeError(f'{mode} did not converge: {log.read_text()}')
             patch = work / f'{mode}-{iteration}-additions.yaml'
-            call('resolve-interface-hints', '--dill', module_index, '--own', 'wp1b_shapes',
+            call('resolve-interface-hints', '--dill', module_index, '--own', 'shape_fixtures',
                  '--log', log, '--out', patch)
             previous, previous_trim = iface, trim
             previous_details = details

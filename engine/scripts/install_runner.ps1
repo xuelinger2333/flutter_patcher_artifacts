@@ -2,7 +2,7 @@
 # Usage: Get-Content token.txt | .\install_runner.ps1 <owner/repository> <runner-name>
 # The registration token is read from stdin. Prerequisites are checked, never
 # installed: Visual Studio 2026/2022 with "Desktop development with C++" and a
-# Windows 10/11 SDK, Git, Python 3 on PATH, and a short WP1_HOME on a drive
+# Windows 10/11 SDK, Git, Python 3 on PATH, and a short FLUTTER_PATCHER_ENGINE_HOME on a drive
 # with at least 40 GB free (engine checkout ~20 GB, build ~2 GB, SDK ~1 GB).
 param(
     [Parameter(Mandatory = $true)][string]$Repository,
@@ -12,7 +12,7 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 function Fail([string]$Message) {
-    Write-Error "WP1_ASSERTION_FAILED: $Message"
+    Write-Error "ASSERTION_FAILED: $Message"
     exit 1
 }
 
@@ -22,9 +22,9 @@ if (-not [Environment]::Is64BitOperatingSystem -or $env:PROCESSOR_ARCHITECTURE -
     Fail 'requires Windows x64'
 }
 
-$home_dir = if ($env:WP1_HOME) { $env:WP1_HOME } else { Fail 'set WP1_HOME to a short absolute path, e.g. D:\fpe' }
+$home_dir = if ($env:FLUTTER_PATCHER_ENGINE_HOME) { $env:FLUTTER_PATCHER_ENGINE_HOME } else { Fail 'set FLUTTER_PATCHER_ENGINE_HOME to a short absolute path, e.g. D:\fpe' }
 if (-not [System.IO.Path]::IsPathRooted($home_dir) -or $home_dir.Length -gt 24) {
-    Fail 'WP1_HOME must be a short absolute path (MAX_PATH), e.g. D:\fpe'
+    Fail 'FLUTTER_PATCHER_ENGINE_HOME must be a short absolute path (MAX_PATH), e.g. D:\fpe'
 }
 New-Item -ItemType Directory -Force -Path $home_dir | Out-Null
 $drive = (Get-Item $home_dir).PSDrive
@@ -67,4 +67,4 @@ $token = $token.Trim()
     --name $RunnerName --labels engine-builder --work _work --disableupdate
 if ($LASTEXITCODE -ne 0) { Fail 'runner configuration failed' }
 Remove-Variable token
-Write-Host "Runner configured in $runner. Start it with .\run.cmd, or re-run config.cmd with --runasservice from an elevated prompt; the job reads WP1_HOME from the repository variable ENGINE_WORK_DIR (set it to $home_dir)."
+Write-Host "Runner configured in $runner. Start it with .\run.cmd, or re-run config.cmd with --runasservice from an elevated prompt; the job reads FLUTTER_PATCHER_ENGINE_HOME from the repository variable ENGINE_WORK_DIR (set it to $home_dir)."

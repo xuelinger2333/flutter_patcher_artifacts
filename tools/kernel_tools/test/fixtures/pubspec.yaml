@@ -1,4 +1,4 @@
-name: wp1b_shapes
+name: shape_fixtures
 publish_to: none
 environment:
   sdk: '>=3.13.0 <4.0.0'

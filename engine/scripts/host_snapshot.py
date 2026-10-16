@@ -3,7 +3,7 @@
 
 Runs on windows-x64 (verified on the maintainer's machine) and macos-arm64
 (implemented, not yet verified). linux-x64 stays the primary host and keeps
-build.sh. The managed layout under WP1_HOME matches common.sh:
+build.sh. The managed layout under FLUTTER_PATCHER_ENGINE_HOME matches common.sh:
 cache/depot_tools, cache/engine, cache/flutter-<version>, runs/<id>.
 
   fetch  <version>            checkout depot_tools and the engine at the version's commit
@@ -50,9 +50,9 @@ class Pipeline:
         require(self.host in hosts.SECONDARY, f'{self.host} is not a secondary host; linux-x64 uses build.sh')
         self.windows = self.host.startswith('windows-')
         self.home = Path(home).resolve()
-        require(self.home.is_absolute(), 'WP1_HOME must be an absolute managed directory')
+        require(self.home.is_absolute(), 'FLUTTER_PATCHER_ENGINE_HOME must be an absolute managed directory')
         if self.windows:
-            require(len(str(self.home)) <= 24, 'WP1_HOME must be short on Windows (MAX_PATH), e.g. D:\\fpe')
+            require(len(str(self.home)) <= 24, 'FLUTTER_PATCHER_ENGINE_HOME must be short on Windows (MAX_PATH), e.g. D:\\fpe')
         self.cache = self.home / 'cache'
         self.depot = self.cache / 'depot_tools'
         self.engine = self.cache / 'engine'
@@ -336,14 +336,14 @@ class Pipeline:
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('--home', default=os.environ.get('WP1_HOME') or str(Path.home() / '.flutter_patcher/engine-builder'))
+    parser.add_argument('--home', default=os.environ.get('FLUTTER_PATCHER_ENGINE_HOME') or str(Path.home() / '.flutter_patcher/engine-builder'))
     commands = parser.add_subparsers(dest='command', required=True)
     fetch = commands.add_parser('fetch')
     fetch.add_argument('version')
     build = commands.add_parser('build')
     build.add_argument('version')
     build.add_argument('--out', required=True)
-    build.add_argument('--jobs', type=int, default=int(os.environ.get('WP1_JOBS', '0')) or max(2, (os.cpu_count() or 4) // 2))
+    build.add_argument('--jobs', type=int, default=int(os.environ.get('FLUTTER_PATCHER_BUILD_JOBS', '0')) or max(2, (os.cpu_count() or 4) // 2))
     add = commands.add_parser('attach')
     add.add_argument('release')
     add.add_argument('bundle')

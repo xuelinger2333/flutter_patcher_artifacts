@@ -16,14 +16,14 @@ assert_abi "$ABI"
 assert_clean_builder
 require_commands python3 git flock zstd tee
 [[ -x /usr/bin/time ]] || die 'GNU time is required'
-mkdir -p "$WP1_HOME"
-WP1_HOME=$(realpath "$WP1_HOME")
-export WP1_HOME
+mkdir -p "$FLUTTER_PATCHER_ENGINE_HOME"
+FLUTTER_PATCHER_ENGINE_HOME=$(realpath "$FLUTTER_PATCHER_ENGINE_HOME")
+export FLUTTER_PATCHER_ENGINE_HOME
 # This also serializes manual builds sharing a cache with the Actions runner.
-exec 9> "$WP1_HOME/build.lock"
+exec 9> "$FLUTTER_PATCHER_ENGINE_HOME/build.lock"
 flock --exclusive 9
 RUN_ID=$(python3 -c 'import uuid; print(uuid.uuid4())')
-RUN="$WP1_HOME/runs/$RUN_ID"
+RUN="$FLUTTER_PATCHER_ENGINE_HOME/runs/$RUN_ID"
 mkdir -p "$RUN"
 OUTPUT=${OUTPUT:-"$RUN/release"}
 [[ ! -e $OUTPUT ]] || die "output already exists: $OUTPUT"
@@ -38,7 +38,7 @@ finish() {
   mkdir -p "$OUTPUT"
   if ! zstd --quiet --stdout "$RUN/build.log" > "$OUTPUT/build.log.zst"; then status=1; fi
   if [[ $status == 0 ]]; then
-    if ! python3 "$WP1_REPO/engine/scripts/artifacts.py" validate "$OUTPUT" --publishable; then status=1; fi
+    if ! python3 "$BUILDER_REPO/engine/scripts/artifacts.py" validate "$OUTPUT" --publishable; then status=1; fi
   fi
   printf '%s\n' "$status" > "$RUN/exit-code.txt"
   if [[ $status == 0 ]]; then
@@ -49,14 +49,14 @@ finish() {
   exit "$status"
 }
 trap finish EXIT
-printf 'Build %s: Flutter %s, ABI %s, builder %s\n' "$RUN_ID" "$VERSION" "$ABI" "$(git -C "$WP1_REPO" rev-parse HEAD)"
+printf 'Build %s: Flutter %s, ABI %s, builder %s\n' "$RUN_ID" "$VERSION" "$ABI" "$(git -C "$BUILDER_REPO" rev-parse HEAD)"
 date -u +%FT%TZ
-bash "$WP1_REPO/engine/scripts/resolve_engine.sh" "$VERSION" > "$RUN/resolved.json"
+bash "$BUILDER_REPO/engine/scripts/resolve_engine.sh" "$VERSION" > "$RUN/resolved.json"
 COMMIT=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["engine_commit"])' "$RUN/resolved.json")
-/usr/bin/time -v -o "$RUN/sync.time" bash "$WP1_REPO/engine/scripts/fetch_engine.sh" "$COMMIT"
-/usr/bin/time -v -o "$RUN/build.time" bash "$WP1_REPO/engine/scripts/build_android.sh" "$ABI" "$RUN/resolved.json" "$RUN/identity.json"
-bash "$WP1_REPO/engine/scripts/package.sh" "$RUN/identity.json" "$OUTPUT"
-bash "$WP1_REPO/engine/scripts/verify_pair.sh" "$OUTPUT" "$WP1_CACHE/flutter-$VERSION"
+/usr/bin/time -v -o "$RUN/sync.time" bash "$BUILDER_REPO/engine/scripts/fetch_engine.sh" "$COMMIT"
+/usr/bin/time -v -o "$RUN/build.time" bash "$BUILDER_REPO/engine/scripts/build_android.sh" "$ABI" "$RUN/resolved.json" "$RUN/identity.json"
+bash "$BUILDER_REPO/engine/scripts/package.sh" "$RUN/identity.json" "$OUTPUT"
+bash "$BUILDER_REPO/engine/scripts/verify_pair.sh" "$OUTPUT" "$ENGINE_CACHE/flutter-$VERSION"
 cp "$OUTPUT/engine.manifest.json" "$RUN/manifest.build.json"
 date -u +%FT%TZ
 echo 'Build and verification completed; compressing full log.'

@@ -62,7 +62,7 @@ def compile_fixtures(flutter, source):
             '--no-aot', '--no-tfa', '--link-platform',
             '--packages', fixtures / '.dart_tool/package_config.json',
             '--output-dill', output / f'shape{i}.dill',
-            f'package:wp1b_shapes/shape{i}.dart', cwd=fixtures)
+            f'package:shape_fixtures/shape{i}.dart', cwd=fixtures)
         require((output / f'shape{i}.dill').is_file(), f'Fixture {i} not compiled')
     return output
 
@@ -81,7 +81,7 @@ def smoke(dart, release, version, fixtures, answers):
     import json
     for case in answers:
         text = run(dart, release / outputs['tools'], 'detect-shape',
-                   '--dill', fixtures / (case['name'] + '.dill'), '--own', 'wp1b_shapes',
+                   '--dill', fixtures / (case['name'] + '.dill'), '--own', 'shape_fixtures',
                    '--exclude', 'f6_overlay.dart', capture=True)
         result = json.loads(text)
         require(result['verdict'] == case['verdict'], f"Wrong verdict: {case['name']}")
@@ -115,11 +115,11 @@ def transform_smoke(dart, release, version, fixtures, work):
     for index, count, verdict in ((4, 2, 'INJECTABLE'), (7, 1, 'INJECTABLE_HOLE')):
         output = work / f'transformed-shape{index}.dill'
         result = json.loads(run(dart, snapshot, 'transform-overlay', '--dill', fixtures / f'shape{index}.dill',
-                            '--own', 'wp1b_shapes', '--out', output,
-                            '--helper-lib', 'package:wp1b_shapes/f6_overlay.dart',
+                            '--own', 'shape_fixtures', '--out', output,
+                            '--helper-lib', 'package:shape_fixtures/f6_overlay.dart',
                             '--helper-fn', 'patcherOverlayBundle', capture=True))
         require(result == {'wrapped': count}, 'Wrong transformed injection count')
-        result = json.loads(run(dart, snapshot, 'detect-shape', '--dill', output, '--own', 'wp1b_shapes',
+        result = json.loads(run(dart, snapshot, 'detect-shape', '--dill', output, '--own', 'shape_fixtures',
                                 '--exclude', 'f6_overlay.dart', capture=True))
         require(result['verdict'] == verdict, 'Transformation changed resource-bypass classification')
 
@@ -154,7 +154,7 @@ def baseline_smoke(dart, tool, flutter, source, work):
         flutter / 'bin/cache/artifacts/engine/common/flutter_patched_sdk_product/platform_strong.dill',
         '--target', 'flutter', '--no-aot', '--no-tfa', '--no-link-platform',
         '--packages', packages, '--output', output / 'app.dill',
-        'package:wp1b_shapes/shape1.dart', cwd=fixtures)
+        'package:shape_fixtures/shape1.dart', cwd=fixtures)
     run(dart, tool, 'inspect-build', '--dill', output / 'app.dill',
         '--packages', packages, '--out', output)
     require(read_json(output / 'kernel_receipt.json')['app_only'] is True,
@@ -249,7 +249,7 @@ def build(args):
     from fault_modules import build as build_fault_modules
     build_fault_modules(dart, work / 'first' / names(args.version)['tools'],
                         flutter / 'bin/cache/artifacts/engine/common/flutter_patched_sdk_product/platform_strong.dill',
-                        work / 'compiler-interface.yaml', 'a' * 64, 7, work / 'wp9-fault-modules')
+                        work / 'compiler-interface.yaml', 'a' * 64, 7, work / 'fault-modules')
     from interface_smoke import exercise
     interface_verification = exercise(dart, work / 'first' / names(args.version)['tools'],
                                      flutter, fixtures, source, work / 'interfaces')
@@ -260,10 +260,10 @@ def build(args):
                'kernel_tools_help': 'passed', 'dart2bytecode_help': 'passed',
                'dart2bytecode_compilation': 'passed_aot_only_and_tfa', 'elapsed_seconds': elapsed,
                'builder_repo_commit': commit, 'flutter_version': args.version,
-               'wp3_interfaces': interface_verification, 'wp6_patch': patch_verification,
-               'wp7_resources': resource_verification,
-               'wp25_partition': partition_verification,
-               'wp9_fault_modules': read_json(work / 'wp9-fault-modules/modules.json')})
+               'interfaces': interface_verification, 'patch': patch_verification,
+               'resources': resource_verification,
+               'framework_partition': partition_verification,
+               'fault_modules': read_json(work / 'fault-modules/modules.json')})
     shutil.copytree(work / 'first', output)
     print(f'TOOLS_RELEASE_READY: {output}; A11 passed; {elapsed} seconds', flush=True)
 

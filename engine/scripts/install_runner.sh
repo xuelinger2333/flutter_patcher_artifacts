@@ -6,7 +6,7 @@ assert_host
 require_commands curl tar sha256sum
 [[ $1 =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || die 'invalid repository'
 [[ $2 =~ ^[A-Za-z0-9_.-]+$ ]] || die 'invalid runner name'
-RUNNER="$WP1_HOME/actions-runner"
+RUNNER="$FLUTTER_PATCHER_ENGINE_HOME/actions-runner"
 [[ ! -e $RUNNER ]] || die 'runner directory already exists'
 mkdir -p "$RUNNER"
 cd "$RUNNER"

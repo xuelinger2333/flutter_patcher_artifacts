@@ -31,7 +31,7 @@ def build(dart, tool, platform, interface, fingerprint, seq, out, tier='lean'):
         source = out / f'{name}.dart'
         source.write_text('@pragma("vm:entry-point")\n@pragma("dyn-module:entry-point")\n'
             f'Object? dynamicModuleEntrypoint() => {expression};\n'
-            'void fail() { throw StateError("WP9 intentional boot failure"); }\n'
+            'void fail() { throw StateError("intentional boot failure"); }\n'
             'void hang() { while (true) {} }\n')
         output = out / f'{name}.bc'
         subprocess.run([str(dart), str(tool), 'bytecode', '--platform', str(platform),

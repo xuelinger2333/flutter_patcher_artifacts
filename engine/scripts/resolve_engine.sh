@@ -5,8 +5,8 @@ assert_host
 assert_version "$1"
 require_commands git python3
 VERSION=$1
-SDK="$WP1_CACHE/flutter-$VERSION"
-mkdir -p "$WP1_CACHE"
+SDK="$ENGINE_CACHE/flutter-$VERSION"
+mkdir -p "$ENGINE_CACHE"
 if [[ ! -d $SDK ]]; then
   git clone --depth 1 --branch "$VERSION" https://github.com/flutter/flutter.git "$SDK" >&2
 fi

@@ -23,7 +23,7 @@ on:
         type: boolean
         default: false
       abi:
-        description: Android ABI (M1 only supports arm64-v8a)
+        description: Android ABI (only arm64-v8a is supported)
         required: false
         default: arm64-v8a
         type: string
@@ -71,7 +71,7 @@ jobs:
       max-parallel: 1
       matrix: ${{ fromJSON(needs.versions.outputs.matrix) }}
     env:
-      WP1_HOME: ${{ vars.ENGINE_WORK_DIR }}
+      FLUTTER_PATCHER_ENGINE_HOME: ${{ vars.ENGINE_WORK_DIR }}
       FLUTTER_VERSION: ${{ matrix.flutter_version }}
       ABI: ${{ inputs.abi }}
     steps:
@@ -107,7 +107,7 @@ jobs:
     runs-on: ${{ matrix.host.labels }}
     timeout-minutes: 360
     env:
-      WP1_HOME: ${{ vars.ENGINE_WORK_DIR }}
+      FLUTTER_PATCHER_ENGINE_HOME: ${{ vars.ENGINE_WORK_DIR }}
       FLUTTER_VERSION: ${{ matrix.flutter_version }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4

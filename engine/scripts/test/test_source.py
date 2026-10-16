@@ -18,12 +18,12 @@ class SourceTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
         self.git('init', '-q')
-        self.git('config', 'user.name', 'WP1 test')
-        self.git('config', 'user.email', 'wp1@example.invalid')
+        self.git('config', 'user.name', 'Pipeline test')
+        self.git('config', 'user.email', 'pipeline@example.invalid')
         (self.root / 'source.cc').write_text('original\n')
         self.git('add', 'source.cc')
         self.git('commit', '-qm', 'fixture')
-        self.bash = os.environ.get('WP1_TEST_BASH', shutil.which('bash'))
+        self.bash = os.environ.get('TEST_BASH', shutil.which('bash'))
 
     def git(self, *args):
         return subprocess.check_output(['git', '-C', str(self.root), *args], text=True).strip()
@@ -53,16 +53,16 @@ class SourceTests(unittest.TestCase):
         missing = self.shell('assert_gn', self.root / 'absent.gn')
         self.assertNotEqual(missing.returncode, 0)
         self.assertIn('args.gn missing', missing.stderr)
-        command = self.shell('require_commands', 'wp9-command-that-does-not-exist')
+        command = self.shell('require_commands', 'flutter-patcher-missing-command')
         self.assertNotEqual(command.returncode, 0)
         self.assertIn('required command missing', command.stderr)
 
     def test_wrong_host_and_dirty_builder_fail(self):
         for body, message in [
             ('uname() { echo Darwin; }; assert_host', 'requires Linux x86_64'),
-            ('uname() { [[ $1 == -s ]] && echo Linux || echo x86_64; }; WP1_HOME=relative; assert_host',
+            ('uname() { [[ $1 == -s ]] && echo Linux || echo x86_64; }; FLUTTER_PATCHER_ENGINE_HOME=relative; assert_host',
              'absolute managed directory'),
-            ('WP1_REPO="$2"; assert_clean_builder', 'builder repository is dirty'),
+            ('BUILDER_REPO="$2"; assert_clean_builder', 'builder repository is dirty'),
         ]:
             (self.root / 'untracked.txt').write_text('deliberately dirty')
             result = subprocess.run([self.bash, '-c', 'source "$1"; ' + body,

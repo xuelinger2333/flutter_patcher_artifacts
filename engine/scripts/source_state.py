@@ -80,7 +80,7 @@ def main():
         else:
             record_build(args.repo, args.engine, args.resolved, args.output)
     except (OSError, ValueError, SyntaxError, subprocess.CalledProcessError) as error:
-        print(f'WP1_SOURCE_INVALID: {error}', file=sys.stderr)
+        print(f'SOURCE_INVALID: {error}', file=sys.stderr)
         return 1
     return 0
 

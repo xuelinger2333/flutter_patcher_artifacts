@@ -1,21 +1,21 @@
 #!/usr/bin/env bash
 set -euo pipefail
-WP1_REPO=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)
-WP1_HOME=${WP1_HOME:-"$HOME/.flutter_patcher/engine-builder"}
-WP1_CACHE="$WP1_HOME/cache"
-WP1_ENGINE="$WP1_CACHE/engine"
-WP1_DEPOT="$WP1_CACHE/depot_tools"
-WP1_SRC="$WP1_ENGINE/engine/src"
+BUILDER_REPO=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)
+FLUTTER_PATCHER_ENGINE_HOME=${FLUTTER_PATCHER_ENGINE_HOME:-"$HOME/.flutter_patcher/engine-builder"}
+ENGINE_CACHE="$FLUTTER_PATCHER_ENGINE_HOME/cache"
+ENGINE_CHECKOUT="$ENGINE_CACHE/engine"
+DEPOT_TOOLS_DIR="$ENGINE_CACHE/depot_tools"
+ENGINE_SRC="$ENGINE_CHECKOUT/engine/src"
 export DEPOT_TOOLS_UPDATE=0
 # Primary host identity (WP-2.6 section 3.2); secondary hosts use host_snapshot.py.
-WP1_HOST=linux-x64
-WP1_GEN_SNAPSHOT="gen_snapshot-$WP1_HOST"
-WP1_SDK_TOOLCHAIN="bin/cache/artifacts/engine/$WP1_HOST"
+BUILD_HOST=linux-x64
+GEN_SNAPSHOT="gen_snapshot-$BUILD_HOST"
+SDK_TOOLCHAIN="bin/cache/artifacts/engine/$BUILD_HOST"
 
-die() { printf 'WP1_ASSERTION_FAILED: %s\n' "$*" >&2; exit 1; }
+die() { printf 'ASSERTION_FAILED: %s\n' "$*" >&2; exit 1; }
 assert_host() {
   [[ $(uname -s) == Linux && $(uname -m) == x86_64 ]] || die 'requires Linux x86_64'
-  [[ $WP1_HOME == /* ]] || die 'WP1_HOME must be an absolute managed directory'
+  [[ $FLUTTER_PATCHER_ENGINE_HOME == /* ]] || die 'FLUTTER_PATCHER_ENGINE_HOME must be an absolute managed directory'
 }
 assert_commit() {
   [[ $2 =~ ^[0-9a-f]{40}$ ]] || die 'commit must be 40 lowercase hexadecimal digits'
@@ -27,11 +27,11 @@ assert_gn() {
 }
 assert_version() {
   [[ $1 =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die 'invalid Flutter stable version'
-  grep -Fxq "$1" "$WP1_REPO/supported_versions.txt" || die "unsupported Flutter version: $1"
+  grep -Fxq "$1" "$BUILDER_REPO/supported_versions.txt" || die "unsupported Flutter version: $1"
 }
 assert_abi() { [[ $1 == arm64-v8a ]] || die 'M1 supports only arm64-v8a'; }
 assert_clean_builder() {
-  [[ -z $(git -C "$WP1_REPO" status --porcelain) ]] || die 'builder repository is dirty'
+  [[ -z $(git -C "$BUILDER_REPO" status --porcelain) ]] || die 'builder repository is dirty'
 }
 require_commands() {
   local command
@@ -40,5 +40,5 @@ require_commands() {
   done
 }
 patch_digest() {
-  python3 "$WP1_REPO/engine/scripts/source_state.py" patches "$WP1_REPO"
+  python3 "$BUILDER_REPO/engine/scripts/source_state.py" patches "$BUILDER_REPO"
 }

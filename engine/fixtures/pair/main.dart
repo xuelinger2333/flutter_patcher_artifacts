@@ -5,7 +5,7 @@ void main() {
   ui.PlatformDispatcher.instance.onBeginFrame = (_) {
     final view = ui.PlatformDispatcher.instance.implicitView;
     if (view == null) {
-      throw StateError('WP1_PAIR_NO_VIEW');
+      throw StateError('PAIR_NO_VIEW');
     }
     final recorder = ui.PictureRecorder();
     final canvas = ui.Canvas(recorder);
@@ -15,7 +15,7 @@ void main() {
     final scene = builder.build();
     view.render(scene);
     scene.dispose();
-    print('WP1_PAIR_OK');
+    print('PAIR_OK');
   };
   ui.PlatformDispatcher.instance.scheduleFrame();
 }

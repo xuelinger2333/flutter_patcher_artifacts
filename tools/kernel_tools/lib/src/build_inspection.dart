@@ -72,24 +72,52 @@ List<String> allocatedClasses(Map<String, dynamic> data) {
 }
 
 const buildInspectionUsage =
-    '  inspect-build --dill <app-only.dill> --packages <package_config.json> --out <directory> [--trace <json>] [--compiler-interface <json>]\n';
+    '  inspect-build --dill <app-only.dill> --packages <package_config.json> --out <directory> [--trace <json>] [--compiler-interface <json>]\n'
+    '                [--filesystem-scheme <scheme> --filesystem-root <directory>...]\n';
+
+/// Maps a compiled source URI to the file it was read from. A URI in the
+/// multi-root [scheme] resolves exactly as gen_kernel's MultiRootFileSystem
+/// does: the path under each root in order, first existing file wins.
+/// Returns null for other non-file schemes.
+Uri? physicalSource(Uri uri, String? scheme, List<Uri> roots) {
+  if (uri.isScheme('file')) return uri;
+  if (scheme == null || !uri.isScheme(scheme)) return null;
+  final path = uri.path.substring(1);
+  for (final root in roots) {
+    final candidate = root.resolve(path);
+    if (File.fromUri(candidate).existsSync()) return candidate;
+  }
+  throw FormatException('Compiled source disappeared: $uri');
+}
+
 Future<Map<String, Object?>> inspectBuild(List<String> args) async {
   final options = <String, String>{};
+  final fileSystemRoots = <Uri>[];
   for (var i = 0; i < args.length; i += 2) {
+    need(i + 1 < args.length, 'Invalid inspect-build options');
+    if (args[i] == '--filesystem-root') {
+      fileSystemRoots.add(Directory(args[i + 1]).absolute.uri);
+      continue;
+    }
     need(
-      i + 1 < args.length &&
-          [
+      [
             '--dill',
             '--packages',
             '--out',
             '--trace',
             '--compiler-interface',
+            '--filesystem-scheme',
           ].contains(args[i]) &&
           !options.containsKey(args[i]),
       'Invalid inspect-build options',
     );
     options[args[i]] = args[i + 1];
   }
+  final scheme = options['--filesystem-scheme'];
+  need(
+    (scheme == null) == fileSystemRoots.isEmpty,
+    '--filesystem-scheme and --filesystem-root go together',
+  );
   String required(String key) {
     need(options[key]?.isNotEmpty == true, 'Missing $key');
     return options[key]!;
@@ -111,8 +139,10 @@ Future<Map<String, Object?>> inspectBuild(List<String> args) async {
     roots[row['name'] as String] = root;
   }
   final hashes = <String, String>{};
-  for (final uri in component.uriToSource.keys) {
-    if (uri.scheme != 'file' || !uri.path.endsWith('.dart')) continue;
+  for (final source in component.uriToSource.keys) {
+    if (!source.path.endsWith('.dart')) continue;
+    final uri = physicalSource(source, scheme, fileSystemRoots);
+    if (uri == null) continue;
     final candidates =
         roots.entries
             .where((r) => uri.toString().startsWith(r.value.toString()))

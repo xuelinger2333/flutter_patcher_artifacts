@@ -1,4 +1,4 @@
-"""Actual WP-3 interface/bytecode integration, usable with a CI dill or source entry."""
+"""End-to-end interface extraction and bytecode validation, usable with a CI dill or source entry."""
 import argparse
 import json
 import hashlib

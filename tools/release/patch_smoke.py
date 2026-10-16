@@ -1,4 +1,4 @@
-"""Exercise WP-6 with the CI-produced tools dill, without a device or release."""
+"""Exercise patch compilation and checks with the CI-produced tools dill, without a device or release."""
 import json
 import subprocess
 

@@ -1,10 +1,10 @@
-// F6: the app body every shape shares. Reads an asset through the bundle the
+// The app body every shape shares. Reads an asset through the bundle the
 // framework hands it, so the overlay either covers it or does not.
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 // 让覆盖层辅助库进到 dill 里，供 kernel 变换引用。
-import 'f6_overlay.dart';
+import 'overlay_helper.dart';
 // ignore: unused_element
 final Object _keepOverlayLib = patcherOverlayBundle;
 

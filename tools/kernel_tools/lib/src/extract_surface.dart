@@ -1,4 +1,3 @@
-// Migrated from flutter_patcher temp/extract_referenced_surface.dart (WP-3).
 import 'package:kernel/kernel.dart';
 import 'package:kernel/library_index.dart';
 import 'interface_document.dart';

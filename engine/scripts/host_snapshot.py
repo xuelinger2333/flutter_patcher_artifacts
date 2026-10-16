@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Secondary-host gen_snapshot pipeline (WP-2.6 phase C).
+"""Secondary-host gen_snapshot pipeline.
 
 Runs on windows-x64 (verified on the maintainer's machine) and macos-arm64
 (implemented, not yet verified). linux-x64 stays the primary host and keeps

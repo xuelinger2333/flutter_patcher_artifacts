@@ -234,7 +234,7 @@ Future<Map<String, Object?>> compilePatch(List<String> args) async {
     'inherited': inherited,
     'resources': <Object>[],
   };
-  // Resource installation is supplied by WP-7; always report shape before gating.
+  // Resources are installed outside this tool; always report shape before gating.
   if (req['resources'] == true) {
     checks['resources'] = resourceShape!;
   }

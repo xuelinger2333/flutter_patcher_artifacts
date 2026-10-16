@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""WP-1 packaging and manifest integrity checks; Python standard library only.
+"""Packaging and manifest integrity checks; Python standard library only.
 
-Manifest schema 2 (WP-2.6) carries one gen_snapshot per build host. The
+Manifest schema 2 carries one gen_snapshot per build host. The
 primary host (linux-x64) packages libflutter.so, the embedding jar and its own
 gen_snapshot under one build_id; secondary hosts build only a gen_snapshot from
 the same engine commit and patches, verify it, and `attach` it to the release.

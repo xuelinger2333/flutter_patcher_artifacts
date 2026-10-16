@@ -26,13 +26,13 @@ index bc8b0591354fd447cf925de462beb5272945b0d4..85ff86e4e517508b5a1da398413fc239
 +  )
 +  ..addFlag(
 +    'tfa',
-+    help: 'F4: run the AOT global transformations including type flow '
++    help: 'Run the AOT global transformations including type flow '
 +        'analysis and its tree shaking.',
 +    defaultsTo: false,
 +  )
 +  ..addFlag(
 +    'aot-only',
-+    help: 'F4: run the AOT global transformations without type flow analysis.',
++    help: 'Run the AOT global transformations without type flow analysis.',
 +    defaultsTo: false,
    );
  
@@ -89,7 +89,7 @@ index 245aa6a86a905389913346396fe28cd615530878..43c7b288082716b0e13a69316b47d75e
        coreTypes,
        component,
 -      treeShakeSignatures: !args.minimalKernel,
-+      // F4: TFA signature shaking rewrites call-site argument descriptors, but a
++      // TFA signature shaking rewrites call-site argument descriptors, but a
 +      // dynamic module calls into a host whose signatures did not change.
 +      treeShakeSignatures: false,
        treeShakeWriteOnlyFields: args.treeShakeWriteOnlyFields,

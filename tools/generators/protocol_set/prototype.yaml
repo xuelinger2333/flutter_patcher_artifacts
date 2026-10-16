@@ -1,8 +1,6 @@
-# E1: "framework extension protocol" tier.
+# "Framework extension protocol" tier.
 # App-independent fixed set: everything a patch-carried widget needs to plug
 # into the host's widget tree / element tree / render tree.
-# dart:core kept at library level so the delta vs iface_narrow.yaml isolates
-# the framework protocol cost only.
 
 extendable:
   - library: 'package:demo_app/patch_api.dart'

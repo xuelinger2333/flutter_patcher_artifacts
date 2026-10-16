@@ -1,14 +1,13 @@
-// F6 · 资源覆盖层的 kernel 变换
+// 资源覆盖层的 kernel 变换
 //
 // 把每个注入点的第 0 个实参包一层：
 //   runApp(X)  ->  runApp(DefaultAssetBundle(bundle: patcherOverlayBundle(), child: X))
 //
-// 验证方式：变换 -> 写盘 -> 重新读回 -> 打印 main 的文本形式。能序列化再反序列化
-// 并打印出结构完整的 AST，说明产出的 kernel 是良构的。
+// 变换后写盘再重新读回：能反序列化，说明产出的 kernel 是良构的。
 //
 // 用法：
-//   dart --packages=<sdk>/.dart_tool/package_config.json \
-//        f6_transform.dart <in.dill> <out.dill> <ownPkg> <helperLibUri> <helperFn>
+//   transform-overlay --dill <input> --own <pkg,...> --out <output>
+//                     --helper-lib <library-uri> --helper-fn <function>
 
 import 'package:kernel/kernel.dart';
 

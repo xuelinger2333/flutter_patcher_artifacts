@@ -9,7 +9,7 @@ const usage = '''flutter_patcher_kernel_tools
   detect-shape --dill <input> --own <pkg,...> [--exclude <substring,...>]
   transform-overlay --dill <input> --own <pkg,...> --out <output>
                     --helper-lib <library-uri> --helper-fn <function>
-Results are JSON. Only the WP-1b migrated shape tools are available in this version.
+Results are JSON. This entry point provides only the shape tools.
 ''';
 
 Future<void> main(List<String> args) async {

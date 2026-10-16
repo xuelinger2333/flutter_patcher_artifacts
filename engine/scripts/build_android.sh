@@ -21,7 +21,7 @@ git -C "$DART" apply "${PATCHES[@]}"
 git -C "$DART" diff --full-index --binary HEAD > "$ENGINE_CACHE/applied.patch"
 [[ -s $ENGINE_CACHE/applied.patch ]] || die 'engine patches made no changes'
 cd "$ENGINE_SRC"
-# Fixed recipe and targets established by T-1; no workflow GN flag overrides.
+# Fixed recipe and targets; no workflow GN flag overrides.
 ./flutter/tools/gn --android --android-cpu arm64 --runtime-mode release \
   --no-prebuilt-dart-sdk --dart-dynamic-modules
 OUT=out/android_release_arm64

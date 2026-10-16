@@ -1,4 +1,4 @@
-// F6 · 精简档资源覆盖层的形状检测器
+// 精简档资源覆盖层的形状检测器
 //
 // 输入一份 app-only 的 kernel，回答三件事：
 //   1. 覆盖层能插在哪（runApp / runWidget 的调用点）
@@ -8,8 +8,7 @@
 // 判定：没有注入点 → 升整程序档；有注入点但有绕过 → 报告，由策略决定。
 //
 // 用法：
-//   dart --packages=<sdk>/.dart_tool/package_config.json \
-//        f6_detect.dart <app.dill> <ownPkg>[,<ownPkg>...]
+//   detect-shape --dill <app.dill> --own <pkg,...> [--exclude <substring,...>]
 
 import 'package:kernel/kernel.dart';
 
@@ -33,7 +32,7 @@ class _Scan extends RecursiveVisitor {
   final Component component;
 
   /// 插件提供的生成代码（覆盖层辅助库一类）。真实产品里它不属于自有包，
-  /// 天然不会被扫到；实验里它和业务代码同包，必须显式排掉，否则它自己那句
+  /// 天然不会被扫到；测试夹具里它和业务代码同包，必须显式排掉，否则它自己那句
   /// `_overlay ?? rootBundle` 会被误报成业务代码绕过覆盖层。
   final List<String> excluded;
 
@@ -121,8 +120,7 @@ class _Scan extends RecursiveVisitor {
   }
 
   /// CFE 会把顶层函数的撕取折叠成常量，`StaticTearOff` 节点根本不出现。
-  /// 不跟常量图就会看不见 `launch(runApp)` 这种形状——与 E2 里常量反查
-  /// 是同一个坑。
+  /// 不跟常量图就会看不见 `launch(runApp)` 这种形状。
   @override
   void visitConstantExpression(ConstantExpression node) {
     _scanConstant(node.constant, node, <Constant>{});

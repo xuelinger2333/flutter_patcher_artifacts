@@ -1,6 +1,6 @@
 name: Build Android engine
 
-# Host matrix (WP-2.6 §3.1): linux-x64 is the primary host and builds
+# Host matrix: linux-x64 is the primary host and builds
 # libflutter.so, the embedding jar and its gen_snapshot under one build_id.
 # Secondary hosts build only their gen_snapshot from the same engine commit
 # and patches and attach it to the primary release on their own runner, where

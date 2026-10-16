@@ -7,7 +7,7 @@ ENGINE_CHECKOUT="$ENGINE_CACHE/engine"
 DEPOT_TOOLS_DIR="$ENGINE_CACHE/depot_tools"
 ENGINE_SRC="$ENGINE_CHECKOUT/engine/src"
 export DEPOT_TOOLS_UPDATE=0
-# Primary host identity (WP-2.6 section 3.2); secondary hosts use host_snapshot.py.
+# Primary host identity; secondary hosts use host_snapshot.py.
 BUILD_HOST=linux-x64
 GEN_SNAPSHOT="gen_snapshot-$BUILD_HOST"
 SDK_TOOLCHAIN="bin/cache/artifacts/engine/$BUILD_HOST"
@@ -29,7 +29,7 @@ assert_version() {
   [[ $1 =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die 'invalid Flutter stable version'
   grep -Fxq "$1" "$BUILDER_REPO/supported_versions.txt" || die "unsupported Flutter version: $1"
 }
-assert_abi() { [[ $1 == arm64-v8a ]] || die 'M1 supports only arm64-v8a'; }
+assert_abi() { [[ $1 == arm64-v8a ]] || die 'only arm64-v8a is supported'; }
 assert_clean_builder() {
   [[ -z $(git -C "$BUILDER_REPO" status --porcelain) ]] || die 'builder repository is dirty'
 }

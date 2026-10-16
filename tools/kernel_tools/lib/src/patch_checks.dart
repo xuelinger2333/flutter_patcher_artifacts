@@ -87,7 +87,7 @@ class AllocationCheck extends RecursiveVisitor {
           ...site(
             n,
             'PATCH_FONT_REQUIRED',
-            'IconData requires complete WP-7 font subsetting',
+            'IconData requires complete font subsetting',
           ),
           for (final field in c.fieldValues.entries)
             if ([

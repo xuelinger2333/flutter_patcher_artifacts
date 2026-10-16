@@ -1,6 +1,6 @@
 import 'dart:ui' as ui;
 
-// A minimal Flutter kernel: no plugin, generated bootstrap, or WP-2 CLI.
+// A minimal Flutter kernel: no plugin, generated bootstrap, or CLI.
 void main() {
   ui.PlatformDispatcher.instance.onBeginFrame = (_) {
     final view = ui.PlatformDispatcher.instance.implicitView;

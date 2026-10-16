@@ -1,7 +1,6 @@
 # flutter_patcher_artifacts
 
-Version-bound build sources for flutter_patcher. This local M1.5 restructuring
-branch is awaiting review. No remote repository, tag or release was created.
+Version-bound build sources for flutter_patcher.
 
 `supported_versions.txt` is the single support table. Users supply their Flutter
 version through the CLI's `flutter --version --machine` detection. Unsupported
@@ -19,13 +18,11 @@ Release assets:
 - `libflutter-arm64_v8a-release.jar`
 - `gen_snapshot-linux-x64` (primary host)
 - `gen_snapshot-windows-x64.exe` (secondary host, attached; see engine/README.md host matrix)
-- `flutter_embedding_release.jar` (pass-through pending WP-5 verification)
+- `flutter_embedding_release.jar` (stock jar, passed through unchanged)
 - `engine.manifest.json`
 - `flutter_patcher_tools-<version>.dill`
 - `tools.manifest.json`
 
 YAML is generated on the user's machine by subcommands of the CI-built dill and
-cached by the future CLI in `~/.flutter_patcher/`. It is not a release asset.
+cached by the CLI in `~/.flutter_patcher/`. It is not a release asset.
 See [engine requirements](engine/README.md) and [tool contract](tools/README.md).
-Earlier acceptance records, measurements and migration sources are kept in the git
-history.

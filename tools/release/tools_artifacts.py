@@ -1,4 +1,4 @@
-"""Strict tools manifest validation, hashing and A11 comparison (stdlib only)."""
+"""Strict tools manifest validation, hashing and reproducibility comparison (stdlib only)."""
 import argparse
 import hashlib
 import json
@@ -74,7 +74,7 @@ def validate(directory):
 
 def compare(first, second):
     left, right = validate(first), validate(second)
-    require(left == right, 'A11 failed: tools manifests or artifact hashes differ')
+    require(left == right, 'Reproducibility check failed: tools manifests or artifact hashes differ')
     return left
 
 

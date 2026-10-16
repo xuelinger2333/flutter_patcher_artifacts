@@ -6,35 +6,29 @@ Only that file is listed in `tools.manifest.json`. Users never compile this dill
 
 Implemented subcommands:
 
-- `detect-shape` and `transform-overlay`: migrated analysis behavior and fixtures.
+- `detect-shape` and `transform-overlay`: asset-overlay injection-point detection and the matching kernel transform.
 - `bytecode`: forwards arguments to the patched dart2bytecode entry point.
 - `gen-protocol-interface --dill <linked-flutter.dill> --out <file>`.
 - `gen-platform-privates --platform <platform.dill> --out <file>`.
-- `gen-framework-partition --platform <platform.dill> --dill <linked-flutter.dill> --out <partition.json>` computes the deterministic host/carry split and reuse surface for WP-2.5.
-- `extract-surface --dill --own --out-iface --out-trim-iface`: WP-3 referenced surface.
+- `gen-framework-partition --platform <platform.dill> --dill <linked-flutter.dill> --out <partition.json>` computes the deterministic host/carry split and the framework-reuse surface.
+- `extract-surface --dill --own --out-iface --out-trim-iface`: framework surface referenced by the app's own packages.
 - `merge-interface`: deterministic four-part union and separate trim interface; `--framework-reuse` adds the validated reuse surface.
 - `resolve-interface-hints`: module-import-scoped, ambiguity-rejecting hint resolution.
 - `trim-interface`: pinned SDK trimmer for lean validation, bundled into the same dill.
+- `compile-baseline`, `inspect-build`, `compile-patch`, `check-allocations`,
+  `check-inherited` and `verify-structure`: see `--help`.
 
 The protocol definition is embedded in `generators/protocol_set/definitions.dart`.
 After editing its YAML source, maintainers run `embed_definitions.py`; CI checks
-that the embedded copy agrees. Traversal logic is unchanged. Both generated YAML
-files are user-side cache entries, not Release assets. CLI orchestration of SDK
-inputs, cache invalidation and doctor belongs to WP-2 and is not implemented here.
+that the embedded copy agrees. Both generated YAML files are user-side cache
+entries, not Release assets. CLI orchestration of SDK inputs, cache invalidation
+and doctor belongs to the code repository and is not implemented here.
 
-The remaining check-allocations, check-inherited and verify-structure commands
-belong to later work packages. The pre-WP-3 combined entry point passed hosted CI on 2026-09-08: two builds with
-identical manifests and snapshot hashes, nine fixtures, both generators,
-transform-overlay, and bytecode compilation with --aot-only and --tfa.
-The build verification step took 111.11 seconds; the full record is kept in
-the git history.
-This publish=false run retained logs but no uploaded dill; Release download and
-doctor integration were unverified in that historical run. The later WP-2 release
-and doctor acceptance are recorded in the code repository. WP-3 source validation
-does not by itself establish acceptance of a newly built CI dill.
+`build_tools.py` compiles the dill twice and fails unless both builds produce
+identical manifests and artifact hashes.
 
-WP-3 keeps `package:kernel`, frontend trimming and version-specific default sets
-here. The code repository CLI only orchestrates these subcommands. Interface YAML
+`package:kernel` analysis, frontend trimming and version-specific default sets
+live here. The code repository CLI only orchestrates these subcommands. Interface YAML
 is project output, never a release asset. `build_tools.py` runs structural interface
 tests and `interface_smoke.py` against the CI-built snapshot: actual extraction,
 merge determinism, trimming, compiler-hint convergence and lean/whole bytecode validation.

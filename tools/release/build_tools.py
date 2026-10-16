@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""WP-1b: build stock-Dart tools twice, smoke-test, and enforce A11."""
+"""Build stock-Dart tools twice, smoke-test, and require byte-identical outputs."""
 import argparse
 import os
 from pathlib import Path
@@ -16,7 +16,7 @@ sys.path.insert(0, str(REPO / 'engine/scripts'))
 import hosts  # noqa: E402
 
 # The dill is host-independent; only the launcher, Dart binaries and the SDK
-# toolchain directory differ per host (WP-2.6 phase C).
+# toolchain directory differ per host.
 HOST = hosts.current()
 SDK_PACKAGES = ('kernel', 'front_end', '_fe_analyzer_shared', 'vm', 'dart2bytecode', 'build_integration')
 
@@ -82,7 +82,7 @@ def smoke(dart, release, version, fixtures, answers):
     for case in answers:
         text = run(dart, release / outputs['tools'], 'detect-shape',
                    '--dill', fixtures / (case['name'] + '.dill'), '--own', 'shape_fixtures',
-                   '--exclude', 'f6_overlay.dart', capture=True)
+                   '--exclude', 'overlay_helper.dart', capture=True)
         result = json.loads(text)
         require(result['verdict'] == case['verdict'], f"Wrong verdict: {case['name']}")
         require(len(result['injectionPoints']) == case['injection_points'], f"Wrong injection count: {case['name']}")
@@ -92,7 +92,7 @@ def smoke(dart, release, version, fixtures, answers):
 
 
 def compiler_smoke(dart, release, version, source, flutter, work):
-    # A real no-main dynamic module exercises the F4 compiler path, beyond help.
+    # A real no-main dynamic module exercises --aot-only and --tfa, beyond help.
     import json
     interface = work / 'compiler-interface.yaml'
     libraries = ['dart:core', 'dart:async', 'dart:collection', 'dart:convert',
@@ -116,16 +116,16 @@ def transform_smoke(dart, release, version, fixtures, work):
         output = work / f'transformed-shape{index}.dill'
         result = json.loads(run(dart, snapshot, 'transform-overlay', '--dill', fixtures / f'shape{index}.dill',
                             '--own', 'shape_fixtures', '--out', output,
-                            '--helper-lib', 'package:shape_fixtures/f6_overlay.dart',
+                            '--helper-lib', 'package:shape_fixtures/overlay_helper.dart',
                             '--helper-fn', 'patcherOverlayBundle', capture=True))
         require(result == {'wrapped': count}, 'Wrong transformed injection count')
         result = json.loads(run(dart, snapshot, 'detect-shape', '--dill', output, '--own', 'shape_fixtures',
-                                '--exclude', 'f6_overlay.dart', capture=True))
+                                '--exclude', 'overlay_helper.dart', capture=True))
         require(result['verdict'] == verdict, 'Transformation changed resource-bypass classification')
 
 
 def partition_smoke(dart, release, version, flutter, fixtures, work):
-    """WP-2.5: partition generation is deterministic and structurally complete."""
+    """Partition generation is deterministic and structurally complete."""
     import json
     tool = release / names(version)['tools']
     platform = flutter / 'bin/cache/artifacts/engine/common/flutter_patched_sdk_product/platform_strong.dill'
@@ -162,7 +162,7 @@ def baseline_smoke(dart, tool, flutter, source, work):
 
 
 def build(args):
-    require(HOST in hosts.SUPPORTED, f'WP-1b build host not in the support matrix: {HOST}')
+    require(HOST in hosts.SUPPORTED, f'Build host not in the support matrix: {HOST}')
     versions = (REPO / 'supported_versions.txt').read_text().splitlines()
     require(args.version in versions, 'Unsupported Flutter version')
     pin = read_json(REPO / 'tools/versions.json')[args.version]
@@ -256,7 +256,7 @@ def build(args):
     require(git('diff', '--full-index', '--binary', cwd=sdk) == expected_diff, 'Dart source changed during build')
     require(git('rev-parse', 'HEAD') == commit and not git('status', '--porcelain'), 'Builder source changed during build')
     elapsed = round(time.monotonic() - start, 2)
-    write_json(work / 'verification.json', {'a11': 'passed', 'snapshot_smoke': 'passed_9_of_9',
+    write_json(work / 'verification.json', {'reproducibility': 'passed', 'snapshot_smoke': 'passed_9_of_9',
                'kernel_tools_help': 'passed', 'dart2bytecode_help': 'passed',
                'dart2bytecode_compilation': 'passed_aot_only_and_tfa', 'elapsed_seconds': elapsed,
                'builder_repo_commit': commit, 'flutter_version': args.version,
@@ -265,7 +265,7 @@ def build(args):
                'framework_partition': partition_verification,
                'fault_modules': read_json(work / 'fault-modules/modules.json')})
     shutil.copytree(work / 'first', output)
-    print(f'TOOLS_RELEASE_READY: {output}; A11 passed; {elapsed} seconds', flush=True)
+    print(f'TOOLS_RELEASE_READY: {output}; reproducibility check passed; {elapsed} seconds', flush=True)
 
 
 def read_flutter(flutter):

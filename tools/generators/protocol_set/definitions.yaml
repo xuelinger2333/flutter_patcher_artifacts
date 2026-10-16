@@ -1,4 +1,4 @@
-# Flutter extension protocol definitions, derived from E1.
+# Flutter extension protocol definitions.
 extendable:
   - library: 'package:flutter/src/widgets/framework.dart'
     class: ['Widget', 'StatelessWidget', 'StatefulWidget', 'State',

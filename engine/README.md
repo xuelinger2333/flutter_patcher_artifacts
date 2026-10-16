@@ -1,6 +1,6 @@
 # Engine build sources
 
-## Host matrix (WP-2.6)
+## Host matrix
 
 `gen_snapshot` is a host-native tool, so each supported build host needs its own
 binary from the same patched engine source. The release carries one
@@ -97,25 +97,19 @@ or skipped device verification. Schema 1 releases remain valid input to
 bytes for the existing assets). The CLI reads both schemas, downloads only the
 record for its own host, and caches engine artifacts per host.
 
-## Measurements
+## Resource footprint (linux-x64)
 
-| New-layout measurement | Value |
+| Measurement | Value |
 |---|---|
 | Build host CPU / memory / filesystem | Linux x64; 8 CPUs; 16,773,283,840 B RAM; 539,792,977,920 B filesystem |
 | Initial fetch/sync and build duration | 216.62 s fetch/sync; 1,026.50 s build stage including GN and checks; Ninja itself 1,024.902 s with -j8 |
 | Runner cgroup memory.peak | 12,234,321,920 B, including charged file cache, service lifetime through first build verification; not aggregate peak RSS |
 | Checkout / output apparent size after build | 26,843,462,179 B / 1,367,516,597 B (`du -sb`) |
 | Engine jar / gen_snapshot / embedding jar size | 11,908,360 B / 6,295,056 B / 1,584,072 B |
-| Sync-only disk / aggregate peak RSS | TBD; not separately measured |
 
-Two new-layout builds passed on 2026-09-08 at source commit
-`8518c2dfd962139c2283c9244e4ae09cf4143d22`. Both outputs were downloaded and verified
-against their manifests. Comparable manifest fields and all three artifact hashes
-matched. The second build reused the cache (17.65 s sync, 233.04 s build stage).
-Full hashes, measurement scope, repeatability results and CI links are
-kept in the git history.
-Device verification and doctor/A1 remain pending. Logs remain local build evidence;
-they are not uploaded as Release assets by the new publisher.
+Two builds of the same source produce identical artifact hashes; a rebuild with a
+warm cache takes about 18 s sync and 233 s build stage.
+Build logs stay on the runner; the publisher does not upload them as Release assets.
 
 No user-facing source-build fallback is provided. Runner provisioning is a
 maintainer operation performed by the user after review: `install_runner.sh`

@@ -1,10 +1,10 @@
-// F1 helper: library-level interface entries only cover public members, but a
+// Library-level interface entries only cover public members, but a
 // module carrying the whole framework reaches private platform members too
 // (dart:ui's _RRectLike._offsetBy is the one that showed up first). Emit
 // explicit entries for every private class and private member of the platform
 // libraries, to be appended to the library-level dart:* interface.
 //
-// Usage: dart gen_platform_privates.dart <platform.dill> <out.yaml>
+// Usage: gen-platform-privates --platform <platform.dill> --out <out.yaml>
 
 import 'dart:io';
 

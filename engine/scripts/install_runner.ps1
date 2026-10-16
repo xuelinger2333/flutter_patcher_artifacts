@@ -1,4 +1,4 @@
-# Provision a replaceable Windows x64 engine runner (WP-2.6 phase C).
+# Provision a replaceable Windows x64 engine runner.
 # Usage: Get-Content token.txt | .\install_runner.ps1 <owner/repository> <runner-name>
 # The registration token is read from stdin. Prerequisites are checked, never
 # installed: Visual Studio 2026/2022 with "Desktop development with C++" and a

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build-host identity shared by the engine and tools pipelines (WP-2.6 §3.2).
+"""Build-host identity shared by the engine and tools pipelines.
 
 Mirrors `HostIdentity` in the CLI: `os` is `linux`, `windows` or `macos`,
 `arch` is `x64` or `arm64`, and the Flutter SDK toolchain directory spells

@@ -35,7 +35,7 @@ the artifacts, then verifies the engine/gen_snapshot pair. Both are bound by one
 ## Secondary hosts (windows-x64, macos-arm64)
 
 `engine/scripts/host_snapshot.py` is the Python counterpart of the bash pipeline
-for hosts that only add a `gen_snapshot`. Same managed layout under `WP1_HOME`
+for hosts that only add a `gen_snapshot`. Same managed layout under `FLUTTER_PATCHER_ENGINE_HOME`
 (`cache/depot_tools`, `cache/engine`, `cache/flutter-<version>`, `runs/<id>`), same
 pinned depot_tools, same GN recipe (`--android --android-cpu arm64 --runtime-mode
 release --no-prebuilt-dart-sdk --dart-dynamic-modules`), same patch bookkeeping
@@ -67,7 +67,7 @@ Windows prerequisites, checked by `install_runner.ps1` and the pipeline itself:
 - Git and a CPython 3 on PATH (not the Microsoft Store alias). depot_tools
   bootstraps its own CPython through `bootstrap\win_tools.bat`; `gclient`,
   hooks and `flutter/tools/gn` use that one.
-- A short `WP1_HOME` such as `D:\fpe` (24 characters at most) so the engine
+- A short `FLUTTER_PATCHER_ENGINE_HOME` such as `D:\fpe` (24 characters at most) so the engine
   checkout stays under `MAX_PATH`; the pipeline additionally runs every git
   with `core.longpaths=true`, `core.autocrlf=false` and `core.filemode=false`
   through `GIT_CONFIG_*` environment variables, without touching user config.
@@ -76,7 +76,7 @@ Windows prerequisites, checked by `install_runner.ps1` and the pipeline itself:
 
 Disk footprint (Windows, 3.47.2): engine checkout with `--no-history` about
 20 GB, build output about 2 GB, managed stock SDK with Android cache about 1 GB.
-Everything lives under `WP1_HOME`; deleting that directory removes all of it.
+Everything lives under `FLUTTER_PATCHER_ENGINE_HOME`; deleting that directory removes all of it.
 
 ## Manifest schema 2
 
@@ -112,9 +112,8 @@ Two new-layout builds passed on 2026-09-08 at source commit
 `8518c2dfd962139c2283c9244e4ae09cf4143d22`. Both outputs were downloaded and verified
 against their manifests. Comparable manifest fields and all three artifact hashes
 matched. The second build reused the cache (17.65 s sync, 233.04 s build stage).
-Full hashes, measurement scope, repeatability results and
-CI links are in the [acceptance record](../docs/WP1_WP1b_构建验收_2026-09-08.md).
-Historical measured evidence remains under `engine/measurements/`.
+Full hashes, measurement scope, repeatability results and CI links are
+kept in the git history.
 Device verification and doctor/A1 remain pending. Logs remain local build evidence;
 they are not uploaded as Release assets by the new publisher.
 

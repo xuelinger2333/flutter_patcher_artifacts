@@ -26,6 +26,6 @@ Release assets:
 
 YAML is generated on the user's machine by subcommands of the CI-built dill and
 cached by the future CLI in `~/.flutter_patcher/`. It is not a release asset.
-See [engine requirements](engine/README.md), [tool contract](tools/README.md), and
-[migration sources](docs/migration-sources.json). `_legacy/` and
-`engine/measurements/` preserve historical evidence; they describe old releases.
+See [engine requirements](engine/README.md) and [tool contract](tools/README.md).
+Earlier acceptance records, measurements and migration sources are kept in the git
+history.

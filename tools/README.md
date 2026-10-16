@@ -26,8 +26,8 @@ The remaining check-allocations, check-inherited and verify-structure commands
 belong to later work packages. The pre-WP-3 combined entry point passed hosted CI on 2026-09-08: two builds with
 identical manifests and snapshot hashes, nine fixtures, both generators,
 transform-overlay, and bytecode compilation with --aot-only and --tfa.
-The build verification step took 111.11 seconds. See the
-[acceptance record](../docs/WP1_WP1b_构建验收_2026-09-08.md).
+The build verification step took 111.11 seconds; the full record is kept in
+the git history.
 This publish=false run retained logs but no uploaded dill; Release download and
 doctor integration were unverified in that historical run. The later WP-2 release
 and doctor acceptance are recorded in the code repository. WP-3 source validation

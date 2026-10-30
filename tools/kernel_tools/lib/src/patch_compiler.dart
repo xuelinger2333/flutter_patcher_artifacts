@@ -228,10 +228,19 @@ Future<Map<String, Object?>> compilePatch(List<String> args) async {
           await File(value('interface')).readAsString(),
           await File(value('compiler_interface')).readAsString(),
         );
+  // Whole-tier modules are checked after TFA, which drops unused dependency
+  // code that carries FFI.
+  final ffi = FfiCheck();
+  if (tier == 'lean') {
+    for (final lib in module) {
+      lib.accept(ffi);
+    }
+  }
   final checks = <String, Object?>{
     'interface': diagnostics,
     'allocation': checker.issues,
     'inherited': inherited,
+    'ffi': ffi.issues,
     'resources': <Object>[],
   };
   // Resources are installed outside this tool; always report shape before gating.
@@ -250,7 +259,10 @@ Future<Map<String, Object?>> compilePatch(List<String> args) async {
   if (req['kernel_out'] is String)
     await writeComponentToBinary(component, req['kernel_out'] as String);
   if (diagnostics.isNotEmpty ||
-      (tier == 'lean' && (checker.issues.isNotEmpty || inherited.isNotEmpty))) {
+      (tier == 'lean' &&
+          (checker.issues.isNotEmpty ||
+              inherited.isNotEmpty ||
+              ffi.issues.isNotEmpty))) {
     return {'status': 'rejected', ...report};
   }
   checkEntry(module, req['seq'] as int, value('fingerprint'), tier);
@@ -300,13 +312,16 @@ Future<Map<String, Object?>> compilePatch(List<String> args) async {
     );
     for (final lib in module) lib.accept(after);
     checks['allocation'] = after.issues;
+    final ffiAfter = FfiCheck();
+    for (final lib in module) lib.accept(ffiAfter);
+    checks['ffi'] = ffiAfter.issues;
     report['fonts'] = after.fonts;
     report['dynamic_fonts'] = after.dynamicFonts;
     report['module_libraries'] = module
         .map((l) => l.importUri.toString())
         .toList();
     if (frameworkReuse != null) report['framework_reuse'] = frameworkReuse;
-    if (after.issues.isNotEmpty)
+    if (after.issues.isNotEmpty || ffiAfter.issues.isNotEmpty)
       return {
         'status': 'rejected',
         ...report,

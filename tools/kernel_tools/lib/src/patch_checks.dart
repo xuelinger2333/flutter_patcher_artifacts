@@ -15,6 +15,90 @@ Map<String, Object?> site(TreeNode node, String code, String message) {
   };
 }
 
+/// FFI call sites a module must not contain: in an AOT runtime the VM cannot
+/// make an FFI call from interpreted code (its FfiCall runtime entry is
+/// UNREACHABLE), so the app would abort. Host code may still make them, and a
+/// module may call that host code. Names cover both the public API and the
+/// forms the VM's FFI transformations lower it to; extension members are
+/// matched after their `Extension|` prefix.
+const _ffiCallSites = {
+  'asFunction',
+  'lookupFunction',
+  'fromFunction',
+  'listener',
+  'isolateLocal',
+  '_asFunctionInternal',
+  '_ffiCall',
+  '_pointerFromFunction',
+  '_nativeCallbackFunction',
+  '_nativeAsyncCallbackFunction',
+  '_nativeIsolateLocalCallbackFunction',
+  '_createNativeCallableListener',
+  '_createNativeCallableIsolateLocal',
+};
+
+bool _isFfiCallSite(Member target) =>
+    target.enclosingLibrary.importUri.toString() == 'dart:ffi' &&
+    _ffiCallSites.contains(target.name.text.split('|').last);
+
+bool _isNativeBinding(Member member) => member.annotations.any((a) {
+  if (a is! ConstantExpression || a.constant is! InstanceConstant) return false;
+  final c = a.constant as InstanceConstant;
+  final library = c.classNode.enclosingLibrary.importUri.toString();
+  if (library == 'dart:ffi') return c.classNode.name == 'Native';
+  return library == 'dart:core' &&
+      c.classNode.name == 'pragma' &&
+      c.fieldValues.values.any(
+        (v) => v is StringConstant && v.value == 'vm:ffi:native',
+      );
+});
+
+/// Rejects native bindings and FFI calls in module code.
+class FfiCheck extends RecursiveVisitor {
+  final List<Map<String, Object?>> issues = [];
+
+  void _report(TreeNode at, String what) => issues.add(
+    site(
+      at,
+      'PATCH_FFI_CALL',
+      '$what: FFI must stay in host code, which a patch may call; a new '
+          'native binding requires a new host release',
+    ),
+  );
+
+  @override
+  void defaultMember(Member node) {
+    if (_isNativeBinding(node)) _report(node, 'Native binding ${node.name.text}');
+    super.defaultMember(node);
+  }
+
+  @override
+  void visitStaticInvocation(StaticInvocation node) {
+    if (_isFfiCallSite(node.target)) _report(node, 'FFI call ${node.target.name.text}');
+    super.visitStaticInvocation(node);
+  }
+
+  @override
+  void visitStaticTearOff(StaticTearOff node) {
+    if (_isFfiCallSite(node.target)) _report(node, 'FFI call ${node.target.name.text}');
+    super.visitStaticTearOff(node);
+  }
+
+  @override
+  void visitConstructorInvocation(ConstructorInvocation node) {
+    if (_isFfiCallSite(node.target)) _report(node, 'FFI call ${node.target.name.text}');
+    super.visitConstructorInvocation(node);
+  }
+
+  @override
+  void visitInstanceInvocation(InstanceInvocation node) {
+    if (_isFfiCallSite(node.interfaceTarget)) {
+      _report(node, 'FFI call ${node.interfaceTarget.name.text}');
+    }
+    super.visitInstanceInvocation(node);
+  }
+}
+
 /// The patched VM checks generative constructor references, not factories.
 class AllocationCheck extends RecursiveVisitor {
   final Set<Library> host;

@@ -349,7 +349,10 @@ class Pipeline:
         sdk = Path(self.resolve(manifest['flutter_version'])['flutter_sdk'])
         self.sdk_ready(sdk)
         work = self.run_dir / 'pair'
-        self.compile_fixture(sdk, release / hosts.gen_snapshot_name(host), work)
+        binary = release / hosts.gen_snapshot_name(host)
+        if not self.windows:
+            binary.chmod(0o755)  # release assets are copied without mode bits
+        self.compile_fixture(sdk, binary, work)
         import pair_device
         pair_device.verify(release, sdk, work)
 

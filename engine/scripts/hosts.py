@@ -53,10 +53,16 @@ def current():
     return key(host_os, host_arch)
 
 
-def toolchain_dir(host):
-    """Flutter SDK host toolchain directory: linux-x64, windows-x64, darwin-arm64."""
+def asset_host(host):
+    """Release-asset host name: linux-x64, windows-x64, darwin-arm64."""
     host_os, host_arch = split(host)
     return f'{"darwin" if host_os == "macos" else host_os}-{host_arch}'
+
+
+def toolchain_dir(host):
+    """Flutter SDK host toolchain directory; Flutter names it darwin-x64 on
+    every Mac, and on Apple Silicon it holds arm64 binaries."""
+    return 'darwin-x64' if host.startswith('macos-') else asset_host(host)
 
 
 def exe(host, name):
@@ -68,8 +74,8 @@ def script(host, name):
 
 
 def gen_snapshot_name(host):
-    """Release asset name: gen_snapshot-<toolchain dir>[.exe]."""
-    return exe(host, f'gen_snapshot-{toolchain_dir(host)}')
+    """Release asset name: gen_snapshot-<asset host>[.exe]."""
+    return exe(host, f'gen_snapshot-{asset_host(host)}')
 
 
 def gen_snapshot_install(host):

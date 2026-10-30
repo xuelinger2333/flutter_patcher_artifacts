@@ -34,6 +34,8 @@ class HostTests(unittest.TestCase):
         self.assertEqual(hosts.gen_snapshot_name('macos-arm64'), 'gen_snapshot-darwin-arm64')
         self.assertEqual(hosts.gen_snapshot_install('windows-x64'),
                          'bin/cache/artifacts/engine/android-arm64-release/windows-x64/gen_snapshot.exe')
+        self.assertEqual(hosts.gen_snapshot_install('macos-arm64'),
+                         'bin/cache/artifacts/engine/android-arm64-release/darwin-x64/gen_snapshot')
         self.assertEqual(hosts.script('windows-x64', 'flutter'), 'flutter.bat')
         self.assertEqual(hosts.script('linux-x64', 'flutter'), 'flutter')
 

@@ -7,6 +7,14 @@ void need(bool value, String reason) {
   if (!value) throw FormatException(reason);
 }
 
+/// `flutter build` compiles the Dart plugin registrant it generates for
+/// plugins with a `dartPluginClass` (path_provider, shared_preferences, ...)
+/// from a file under the build's .dart_tool. A module imports only package:
+/// and dart: libraries, so it can never allocate that class.
+bool isFlutterPluginRegistrant(String library) =>
+    library.startsWith('file:///') &&
+    library.endsWith('/.dart_tool/flutter_build/dart_plugin_registrant.dart');
+
 /// Pinned VM trace format: four cells per entity; only bare class references
 /// represent AddInstantiatedClass. A C event consumes a function reference.
 List<String> allocatedClasses(Map<String, dynamic> data) {
@@ -58,6 +66,7 @@ List<String> allocatedClasses(Map<String, dynamic> data) {
       final id = item as int;
       if (e[id * 4] == 'C') {
         final library = stringAt(e[id * 4 + 1]), type = stringAt(e[id * 4 + 2]);
+        if (isFlutterPluginRegistrant(library)) continue;
         need(
           (library.startsWith('dart:') || library.startsWith('package:')) &&
               type.isNotEmpty,

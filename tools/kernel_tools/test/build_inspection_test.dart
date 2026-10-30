@@ -10,6 +10,27 @@ void main() {
   };
   if (allocatedClasses(data).join() != 'package:app/main.dart::Widget')
     throw StateError('Allocation semantics');
+  // Flutter's generated plugin registrant is skipped; other file: classes are
+  // still rejected as non-portable.
+  for (final (library, accepted) in [
+    ('file:///w/project/.dart_tool/flutter_build/dart_plugin_registrant.dart', true),
+    ('file:///w/project/lib/main.dart', false),
+  ]) {
+    final mixed = {
+      ...data,
+      'strings': [...data['strings'] as List, library, '_PluginRegistrant'],
+      'entities': [...data['entities'] as List, 'C', 3, 4, 0],
+      'trace': ['R', 0, 2, 'E'],
+    };
+    var rejected = false;
+    try {
+      if (allocatedClasses(mixed).join() != 'package:app/main.dart::Widget')
+        throw StateError('Registrant was not skipped');
+    } on FormatException {
+      rejected = true;
+    }
+    if (rejected == accepted) throw StateError('Registrant handling: $library');
+  }
   for (final trace in [
     ['R', 0],
     ['R', 999, 'E'],
@@ -54,7 +75,7 @@ void main() {
     temp.deleteSync(recursive: true);
   }
   print(
-    'build inspection: allocation semantics, 6 malformed traces '
+    'build inspection: allocation semantics, plugin registrant, 6 malformed traces '
     'and multi-root resolution passed',
   );
 }

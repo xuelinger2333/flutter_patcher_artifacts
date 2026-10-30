@@ -246,10 +246,30 @@ class Pipeline:
         require((kits.parent / 'Debuggers/arm64/dbghelp.dll').is_file(),
                 'Windows SDK feature "Debugging Tools for Windows" (OptionId.WindowsDesktopDebuggers) is missing')
 
+    def select_mac_sdk(self):
+        """gclient links the active Xcode's macOS SDK. The engine's bundled lld
+        cannot read text stubs from SDKs newer than the engine (Xcode 27 adds
+        an arm64e.x1 target), so FLUTTER_PATCHER_MAC_SDK may name an older SDK
+        such as /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk."""
+        sdks = self.src / 'flutter/prebuilts/SDKs'
+        override = os.environ.get('FLUTTER_PATCHER_MAC_SDK')
+        if override:
+            sdk = Path(override).resolve()
+            require(re.fullmatch(r'MacOSX[0-9.]+\.sdk', sdk.name) and (sdk / 'usr/lib/libSystem.tbd').is_file(),
+                    f'FLUTTER_PATCHER_MAC_SDK is not a versioned macOS SDK: {override}')
+            for link in sdks.glob('MacOSX*'):
+                link.unlink()
+            (sdks / sdk.name).symlink_to(sdk)
+        linked = sorted(link.name for link in sdks.glob('MacOSX*'))
+        require(len(linked) == 1, f'expected one macOS SDK under {sdks}: {linked}')
+        self.toolchain['mac_sdk'] = linked[0]
+
     def build_snapshot(self, jobs):
         target, output = hosts.GEN_SNAPSHOT_BUILD[self.host]
         if self.windows:
             self.check_windows_sdk()
+        elif self.host.startswith('macos-'):
+            self.select_mac_sdk()
         self.run(self.python(), self.src / 'flutter/tools/gn', *GN_ARGS, cwd=self.src)
         args = (self.src / OUT / 'args.gn').read_text()
         require(re.search(r'^dart_dynamic_modules = true$', args, re.M), 'dart_dynamic_modules is not true')

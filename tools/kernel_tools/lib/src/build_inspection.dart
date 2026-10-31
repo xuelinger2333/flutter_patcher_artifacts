@@ -139,27 +139,26 @@ Future<Map<String, Object?>> inspectBuild(List<String> args) async {
   );
   final configFile = File(required('--packages')).absolute;
   final config = jsonDecode(configFile.readAsStringSync()) as Map;
-  final roots = <String, Uri>{};
+  // Compared decoded: package_config writes `cross_file-0.3.5+2` where the
+  // compiler's source URIs encode `cross_file-0.3.5%2B2`.
+  String decoded(Uri uri) => Uri.decodeFull(uri.toString());
+  final roots = <String, String>{};
   for (final row in config['packages'] as List) {
     final packageRoot = configFile.uri.resolve(row['rootUri'] as String);
     final root = Uri.parse(
       '${packageRoot.toString().replaceFirst(RegExp(r"/+$"), "")}/',
     ).resolve(row['packageUri'] as String? ?? '');
-    roots[row['name'] as String] = root;
+    roots[row['name'] as String] = decoded(root);
   }
   final hashes = <String, String>{};
   for (final source in component.uriToSource.keys) {
     if (!source.path.endsWith('.dart')) continue;
     final uri = physicalSource(source, scheme, fileSystemRoots);
     if (uri == null) continue;
+    final source = decoded(uri);
     final candidates =
-        roots.entries
-            .where((r) => uri.toString().startsWith(r.value.toString()))
-            .toList()
-          ..sort(
-            (a, b) =>
-                b.value.toString().length.compareTo(a.value.toString().length),
-          );
+        roots.entries.where((r) => source.startsWith(r.value)).toList()
+          ..sort((a, b) => b.value.length.compareTo(a.value.length));
     if (candidates.isEmpty) {
       // SDK internal sources are bound by the selected SDK/platform identity.
       need(
@@ -169,7 +168,7 @@ Future<Map<String, Object?>> inspectBuild(List<String> args) async {
       continue;
     }
     final match = candidates.first;
-    final relative = uri.toString().substring(match.value.toString().length);
+    final relative = source.substring(match.value.length);
     final file = File.fromUri(uri);
     need(file.existsSync(), 'Compiled source disappeared: $uri');
     hashes['package:${match.key}/$relative'] = sha256

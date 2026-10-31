@@ -12,6 +12,7 @@ binary from the same patched engine source. The release carries one
 | linux-x64 | primary: engine, embedding jar, `gen_snapshot` | `gen_snapshot-linux-x64` | `engine/scripts/build.sh` (bash) |
 | windows-x64 | secondary: `gen_snapshot` only | `gen_snapshot-windows-x64.exe` | `engine/scripts/host_snapshot.py` |
 | macos-arm64 | secondary, implemented but no runner or acceptance yet | `gen_snapshot-darwin-arm64` | `engine/scripts/host_snapshot.py` |
+| macos-arm64 | iOS engine: `Flutter.xcframework`, iOS `gen_snapshot` | `engine-ios.manifest.json` | `engine/scripts/ios_engine.py` |
 
 Secondary hosts never build `libflutter.so`; their `gen_snapshot` is bound to the
 primary release by identical `engine_commit`, `engine_stamp`, `depot_tools_rev`
@@ -31,6 +32,24 @@ The build workflow invokes `engine/scripts/build.sh`, which resolves the engine,
 fetches dependencies, verifies and applies patches, builds fixed targets, packages
 the artifacts, then verifies the engine/gen_snapshot pair. Both are bound by one
 `build_id` in `engine.manifest.json`. The embedding jar is copied unchanged.
+
+## iOS engine (macos-arm64)
+
+`engine/scripts/ios_engine.py build <version> --out <dir>` uses the managed
+layout, depot_tools, engine commit and patches of `host_snapshot.py`, builds
+`out/ios_release` (`--ios --runtime-mode release --no-prebuilt-dart-sdk
+--dart-dynamic-modules`), checks that its `gen_snapshot_arm64` compiles the
+pairing fixture to iOS AOT, and writes `Flutter.xcframework.zip` (the stock
+xcframework with the `ios-arm64` slice replaced), `gen_snapshot_ios-darwin-arm64`
+and `engine-ios.manifest.json` (schema 1, checked by `artifacts.py validate-ios`).
+
+The engine links with its own lld, which must read the SDK text stubs of the
+Xcode it builds with. Xcode 27 SDKs add an `arm64e.x1` stub target that the 3.47
+engine rejects (`could not load TAPI file ... malformed file`), so Mac builds pin
+an older Xcode with `FLUTTER_PATCHER_XCODE=/path/to/Xcode.app` (an extracted
+`.xip` is enough; it is never made the default). Both Mac pipelines link
+`//flutter/prebuilts` to that Xcode and record its version and SDKs in the
+manifest `toolchain`.
 
 ## Secondary hosts (windows-x64, macos-arm64)
 

@@ -11,7 +11,7 @@ upgraded in place by the first attach.
 
 import argparse
 import copy
-from datetime import datetime
+from datetime import datetime, timezone
 import hashlib
 import json
 from pathlib import Path
@@ -364,6 +364,115 @@ def attach(directory, bundle_dir):
     return manifest
 
 
+IOS_FRAMEWORK_ZIP = 'Flutter.xcframework.zip'
+IOS_FRAMEWORK_BINARY = 'Flutter.xcframework/ios-arm64/Flutter.framework/Flutter'
+IOS_GEN_SNAPSHOT = 'gen_snapshot_ios-darwin-arm64'
+MACHO_ARM64 = b'\xcf\xfa\xed\xfe\x0c\x00\x00\x01'
+
+
+def zip_directory(source, archive):
+    """Deterministic zip of `source` under its own name; links are rejected."""
+    source = Path(source)
+    with zipfile.ZipFile(archive, 'w', zipfile.ZIP_DEFLATED) as out:
+        for path in sorted(source.rglob('*')):
+            require(not path.is_symlink(), f'link in {source.name}: {path}')
+            if path.is_file():
+                info = zipfile.ZipInfo(path.relative_to(source.parent).as_posix(), (1980, 1, 1, 0, 0, 0))
+                info.external_attr = ((path.stat().st_mode & 0o777) | 0o100000) << 16
+                info.compress_type = zipfile.ZIP_DEFLATED
+                out.writestr(info, path.read_bytes())
+
+
+def package_ios(framework, stock, gen_snapshot, identity, verify, directory):
+    """engine-ios release (schema 1): the stock Flutter.xcframework with its
+    device slice replaced by the patched `framework`, and the gen_snapshot
+    (runs on macos-arm64) that compiles iOS arm64 AOT."""
+    directory = Path(directory)
+    directory.mkdir(parents=True, exist_ok=True)
+    work = directory / '.xcframework'
+    shutil.rmtree(work, ignore_errors=True)
+    xcframework = work / 'Flutter.xcframework'
+    shutil.copytree(stock, xcframework, symlinks=True)
+    shutil.rmtree(xcframework / '_CodeSignature', ignore_errors=True)  # covered the stock device slice
+    device = xcframework / 'ios-arm64'
+    require(device.is_dir(), 'stock Flutter.xcframework has no ios-arm64 slice')
+    shutil.rmtree(device)
+    shutil.copytree(framework, device / 'Flutter.framework', symlinks=True)
+    zip_directory(xcframework, directory / IOS_FRAMEWORK_ZIP)
+    binary = device / 'Flutter.framework/Flutter'
+    shutil.copyfile(gen_snapshot, directory / IOS_GEN_SNAPSHOT)
+    record = lambda name: {'name': name, 'size': (directory / name).stat().st_size,
+                           'sha256': sha256(directory / name)}
+    manifest = {
+        'schema': 1,
+        **{key: identity[key] for key in ('flutter_version', 'engine_commit', 'builder_repo_commit',
+                                           'depot_tools_rev', 'patches', 'toolchain')},
+        'build_id': str(uuid.uuid4()),
+        'built_at': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
+        'verify': verify,
+        'files': [
+            {'role': 'framework', **record(IOS_FRAMEWORK_ZIP),
+             'contents': [{'name': IOS_FRAMEWORK_BINARY, 'size': binary.stat().st_size, 'sha256': sha256(binary)}]},
+            {'role': 'gen_snapshot', **record(IOS_GEN_SNAPSHOT), 'host_os': 'macos', 'host_arch': 'arm64'},
+        ],
+    }
+    shutil.rmtree(work)
+    write_json(directory / 'engine-ios.manifest.json', manifest)
+    return validate_ios(directory)
+
+
+def validate_ios(directory):
+    """The checks the CLI applies to engine-ios.manifest.json, plus file contents."""
+    directory = Path(directory)
+    manifest = read_json(directory / 'engine-ios.manifest.json')
+    require(isinstance(manifest, dict) and manifest.get('schema') == 1, 'unsupported engine-ios schema')
+    require(re.fullmatch(r'\d+\.\d+\.\d+', manifest.get('flutter_version', '')),
+            'invalid Flutter stable version')
+    for key in ('engine_commit', 'builder_repo_commit', 'depot_tools_rev'):
+        require(hex_value(manifest.get(key), 40), f'invalid {key}')
+    build_id = uuid.UUID(manifest['build_id'])
+    require(build_id.version == 4 and str(build_id) == manifest['build_id'],
+            'build_id must be a canonical UUID v4')
+    timestamp(manifest.get('built_at'))
+    check_patches(manifest.get('patches'))
+    check_toolchain(manifest.get('toolchain'))
+    verify = manifest.get('verify')
+    require(isinstance(verify, dict) and verify.get('snapshot') in ('pending', 'passed')
+            and verify.get('device') in ('pending', 'passed', 'skipped')
+            and verify.get('device_reason') == ('no_ios_device' if verify['device'] == 'skipped' else None),
+            'invalid iOS verify result')
+    files = manifest.get('files')
+    require(isinstance(files, list) and len(files) == 2 and all(isinstance(row, dict) for row in files),
+            'expected two iOS artifacts')
+    rows = {row.get('role'): row for row in files}
+    require(set(rows) == {'framework', 'gen_snapshot'}, 'missing/duplicate iOS artifact role')
+    for role, name in (('framework', IOS_FRAMEWORK_ZIP), ('gen_snapshot', IOS_GEN_SNAPSHOT)):
+        row, path = rows[role], directory / name
+        require(row.get('name') == name and path.is_file() and not path.is_symlink(), f'{name} missing')
+        require(type(row.get('size')) is int and row['size'] == path.stat().st_size
+                and hex_value(row.get('sha256'), 64) and sha256(path) == row['sha256'],
+                f'{name}: size/hash mismatch')
+    snapshot = rows['gen_snapshot']
+    require((snapshot.get('host_os'), snapshot.get('host_arch')) == ('macos', 'arm64'),
+            'iOS gen_snapshot must run on macos-arm64')
+    with (directory / IOS_GEN_SNAPSHOT).open('rb') as stream:
+        require(hosts.is_native_executable('macos-arm64', stream.read(64)), 'iOS gen_snapshot is not Mach-O')
+    contents = rows['framework'].get('contents')
+    require(isinstance(contents, list) and len(contents) == 1 and isinstance(contents[0], dict)
+            and contents[0].get('name') == IOS_FRAMEWORK_BINARY, 'invalid framework contents')
+    with zipfile.ZipFile(directory / IOS_FRAMEWORK_ZIP) as archive:
+        names = archive.namelist()
+        require(all(name.split('/')[0] == 'Flutter.xcframework' and '\\' not in name
+                    and not {'.', '..'} & set(name.split('/')) for name in names),
+                'unsafe framework archive entry')
+        require('Flutter.xcframework/Info.plist' in names, 'framework archive has no Info.plist')
+        data = archive.read(IOS_FRAMEWORK_BINARY)
+    require(len(data) == contents[0].get('size') and hashlib.sha256(data).hexdigest() == contents[0].get('sha256'),
+            'framework device binary mismatch')
+    require(data[:8] == MACHO_ARM64, 'framework device binary is not arm64 Mach-O')
+    return manifest
+
+
 def comparable(manifest):
     result = copy.deepcopy(manifest)
     for key in ('build_id', 'built_at'):
@@ -386,6 +495,7 @@ def main():
     check = commands.add_parser('validate')
     check.add_argument('directory')
     check.add_argument('--publishable', action='store_true')
+    commands.add_parser('validate-ios').add_argument('directory')
     compare = commands.add_parser('compare')
     compare.add_argument('first')
     compare.add_argument('second')
@@ -398,6 +508,8 @@ def main():
             package(args.build_dir, args.identity, args.out)
         elif args.command == 'validate':
             validate(args.directory, args.publishable)
+        elif args.command == 'validate-ios':
+            validate_ios(args.directory)
         elif args.command == 'attach':
             attach(args.release, args.bundle)
         else:

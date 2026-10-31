@@ -14,6 +14,7 @@ import argparse
 from datetime import datetime, timezone
 import os
 from pathlib import Path
+import plistlib
 import re
 import shutil
 import subprocess
@@ -100,6 +101,13 @@ class Pipeline:
             env[f'GIT_CONFIG_KEY_{index}'] = key
             env[f'GIT_CONFIG_VALUE_{index}'] = value
         env['PATH'] = str(self.depot) + os.pathsep + env['PATH']
+        # The engine's bundled lld reads the SDK text stubs, and newer Xcode
+        # SDKs can use stub targets it rejects (Xcode 27 adds arm64e.x1), so a
+        # Mac build may pin an older Xcode.app without making it the default.
+        xcode = env.get('FLUTTER_PATCHER_XCODE')
+        if xcode and not self.windows:
+            env['DEVELOPER_DIR'] = str(Path(xcode).resolve() / 'Contents/Developer')
+            env.pop('SDKROOT', None)
         if self.windows:
             env['DEPOT_TOOLS_WIN_TOOLCHAIN'] = '0'
             studio, year = self.visual_studio(env)
@@ -246,30 +254,38 @@ class Pipeline:
         require((kits.parent / 'Debuggers/arm64/dbghelp.dll').is_file(),
                 'Windows SDK feature "Debugging Tools for Windows" (OptionId.WindowsDesktopDebuggers) is missing')
 
-    def select_mac_sdk(self):
-        """gclient links the active Xcode's macOS SDK. The engine's bundled lld
-        cannot read text stubs from SDKs newer than the engine (Xcode 27 adds
-        an arm64e.x1 target), so FLUTTER_PATCHER_MAC_SDK may name an older SDK
-        such as /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk."""
-        sdks = self.src / 'flutter/prebuilts/SDKs'
-        override = os.environ.get('FLUTTER_PATCHER_MAC_SDK')
-        if override:
-            sdk = Path(override).resolve()
-            require(re.fullmatch(r'MacOSX[0-9.]+\.sdk', sdk.name) and (sdk / 'usr/lib/libSystem.tbd').is_file(),
-                    f'FLUTTER_PATCHER_MAC_SDK is not a versioned macOS SDK: {override}')
-            for link in sdks.glob('MacOSX*'):
-                link.unlink()
-            (sdks / sdk.name).symlink_to(sdk)
-        linked = sorted(link.name for link in sdks.glob('MacOSX*'))
-        require(len(linked) == 1, f'expected one macOS SDK under {sdks}: {linked}')
-        self.toolchain['mac_sdk'] = linked[0]
+    def link_xcode(self, platforms):
+        """Points //flutter/prebuilts at the build's Xcode (DEVELOPER_DIR, else
+        the active one), whatever gclient's hook linked, and records it."""
+        developer = Path(self.env.get('DEVELOPER_DIR') or self.run('xcode-select', '-p', capture=True))
+        info = plistlib.loads((developer.parent / 'version.plist').read_bytes())
+        self.toolchain['xcode'] = f"{info['CFBundleShortVersionString']} ({info['ProductBuildVersion']})"
+        links = {'SDKs': {'XcodeDefault.xctoolchain': developer / 'Toolchains/XcodeDefault.xctoolchain'},
+                 'Platforms': {}}
+        for platform in platforms:
+            root = developer / f'Platforms/{platform}.platform'
+            sdks = [path for path in sorted((root / 'Developer/SDKs').glob(f'{platform}*.sdk'))
+                    if re.fullmatch(rf'{platform}\d+\.\d+(\.\d+)?\.sdk', path.name)]
+            require(len(sdks) == 1, f'expected one versioned {platform} SDK in {root}')
+            links['Platforms'][root.name] = root
+            links['SDKs'][sdks[0].name] = sdks[0]
+            self.toolchain[f'{platform.lower()}_sdk'] = sdks[0].name
+        for folder, targets in links.items():
+            directory = self.src / 'flutter/prebuilts' / folder
+            directory.mkdir(parents=True, exist_ok=True)
+            for old in directory.iterdir():
+                require(old.is_symlink(), f'unexpected non-link in {directory}: {old.name}')
+                old.unlink()
+            for name, target in targets.items():
+                require(target.exists(), f'missing {target}')
+                (directory / name).symlink_to(target)
 
     def build_snapshot(self, jobs):
         target, output = hosts.GEN_SNAPSHOT_BUILD[self.host]
         if self.windows:
             self.check_windows_sdk()
         elif self.host.startswith('macos-'):
-            self.select_mac_sdk()
+            self.link_xcode(('MacOSX',))
         self.run(self.python(), self.src / 'flutter/tools/gn', *GN_ARGS, cwd=self.src)
         args = (self.src / OUT / 'args.gn').read_text()
         require(re.search(r'^dart_dynamic_modules = true$', args, re.M), 'dart_dynamic_modules is not true')
@@ -288,17 +304,21 @@ class Pipeline:
         self.run(flutter, '--suppress-analytics', 'precache', '--android')
         self.run(flutter, '--suppress-analytics', '--version', '--machine', capture=True)
 
-    def compile_fixture(self, sdk, gen_snapshot, work):
-        """The minimal AOT snapshot used by verify_pair.sh, compiled with `gen_snapshot`."""
+    def compile_kernel(self, sdk, work, target_os):
+        """The pairing fixture as an AOT kernel for `target_os`, with the managed stock SDK."""
         work.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(REPO / 'engine/fixtures/pair/main.dart', work / 'main.dart')
         (work / 'package_config.json').write_text('{"configVersion":2,"packages":[]}\n')
         frontend = sdk / hosts.toolchain_file(self.host, 'frontend_server_aot.dart.snapshot')
         self.run(hosts.dart_binary(self.host, sdk, 'dartaotruntime'), frontend,
                  '--sdk-root', str(sdk / 'bin/cache/artifacts/engine/common/flutter_patched_sdk_product') + '/',
-                 '--target', 'flutter', '--target-os', 'android', '--aot', '--tfa',
+                 '--target', 'flutter', '--target-os', target_os, '--aot', '--tfa',
                  '--packages', work / 'package_config.json', '--output-dill', work / 'main.dill', work / 'main.dart')
         require((work / 'main.dill').stat().st_size > 0, 'minimal kernel not produced')
+
+    def compile_fixture(self, sdk, gen_snapshot, work):
+        """The minimal AOT snapshot used by verify_pair.sh, compiled with `gen_snapshot`."""
+        self.compile_kernel(sdk, work, 'android')
         self.run(gen_snapshot, '--snapshot_kind=app-aot-elf', f'--elf={work / "libapp.so"}', work / 'main.dill')
         with (work / 'libapp.so').open('rb') as stream:
             elf_machine(stream.read(20), 183, 'minimal AOT snapshot')

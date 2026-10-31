@@ -53,7 +53,9 @@ class IosPipeline(Pipeline):
         assembly = work / 'snapshot.S'
         self.run(gen_snapshot, '--deterministic', '--snapshot_kind=app-aot-assembly',
                  f'--assembly={assembly}', work / 'main.dill')
-        require('kDartIsolateSnapshotInstructions' in assembly.read_text(errors='replace'),
+        # Newer Dart emits one kDartSnapshotText; older releases one symbol per snapshot part.
+        text = assembly.read_text(errors='replace')
+        require('kDartSnapshotText' in text or 'kDartIsolateSnapshotInstructions' in text,
                 'gen_snapshot produced no iOS AOT snapshot')
 
     def build(self, version, out, jobs):

@@ -3,6 +3,8 @@ import 'package:kernel/kernel.dart';
 import 'package:kernel/class_hierarchy.dart';
 import 'package:front_end/src/kernel/dynamic_module_validator.dart';
 
+import 'extract_surface.dart' show surfaceOrigin;
+
 Map<String, Object?> site(TreeNode node, String code, String message) {
   final loc = node.location;
   return {
@@ -247,9 +249,13 @@ List<Map<String, Object?>> inheritedCheck(
           cls,
           setters: setter,
         )) {
+          // A member copied into a (private) eliminated mixin application is
+          // listed by the host compiler under the mixin's own declaration.
+          final origin = surfaceOrigin(member);
           if (!member.name.isPrivate &&
               host.contains(member.enclosingLibrary) &&
-              (!exposed(member) || !recorded(member))) {
+              (!(exposed(member) || exposed(origin)) ||
+                  !(recorded(member) || recorded(origin)))) {
             issues.add(
               site(
                 cls,

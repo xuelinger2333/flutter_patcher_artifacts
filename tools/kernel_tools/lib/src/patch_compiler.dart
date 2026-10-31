@@ -62,10 +62,18 @@ Future<Map<String, Object?>> compilePatch(List<String> args) async {
         ? File(value('packages')).absolute.uri
         : Uri.parse(value('packages'))
     ..dynamicInterfaceSpecificationUri = File(value('interface')).absolute.uri
-    ..allowDynamicCallsInDynamicModules = tier == 'whole'
-    ..dynamicCallsSelectorAllowList = tier == 'whole'
-        ? ['-', '+', '*', 'get:index', 'relativeError', 'absoluteError']
-        : []
+    // Real applications index decoded JSON (`response['code']`). The host
+    // interface lists as dynamically-callable every host member such a call
+    // could reach; selectors no host class declares are allowed below.
+    ..allowDynamicCallsInDynamicModules = true
+    ..dynamicCallsSelectorAllowList = [
+      '-',
+      '+',
+      '*',
+      'get:index',
+      'relativeError',
+      'absoluteError',
+    ]
     ..embedSourceText = true
     ..onDiagnostic = (m) {
       if (!m.severity.toString().endsWith('.error')) return;
@@ -159,6 +167,29 @@ Future<Map<String, Object?>> compilePatch(List<String> args) async {
   final module = component.libraries
       .where((l) => !loadedLibraries.contains(l))
       .toList();
+  // A dynamic call whose selector no host class declares can only reach the
+  // module's own (interpreted) classes or a closure (`call`); on anything else
+  // it throws NoSuchMethodError exactly as the unpatched code would. Only a
+  // selector the host declares but has not made dynamically invocable is a
+  // risk, and that stays rejected. The baseline's copy of the application is
+  // not a host: the module replaces it.
+  final replaced = (req['original_own'] as List? ?? []).cast<String>().toSet();
+  final hostNames = <String>{
+    for (final lib in loadedLibraries)
+      if (lib.importUri.scheme != 'package' ||
+          !replaced.contains(lib.importUri.pathSegments.first))
+        for (final cls in lib.classes)
+          for (final m in cls.members)
+            if (m.isInstanceMember) m.name.text,
+  }..remove('call');
+  diagnostics.removeWhere((d) {
+    if (d['code'] != 'DynamicCallsAreNotAllowedInDynamicModule') return false;
+    final selector = RegExp(r"selector '([^']+)'")
+        .firstMatch(d['message'] as String)
+        ?.group(1);
+    if (selector == null) return false;
+    return !hostNames.contains(selector.replaceFirst(RegExp('^[gs]et:'), ''));
+  });
   // CFE has no character offset for an implicit super() call. Recover its
   // enclosing declaration from the same Kernel only when the match is unique.
   for (final diagnostic in diagnostics) {
@@ -242,6 +273,24 @@ Future<Map<String, Object?>> compilePatch(List<String> args) async {
   for (final lib in module) {
     lib.accept(checker);
   }
+  // Icons the lean module shares the host's icon fonts with. The host ships
+  // them tree-shaken to these code points; a patch font replaces the host's
+  // family, so it must keep them (or need not ship at all).
+  final hostIcons = <String, Map<String, Object?>>{};
+  if (tier == 'lean') {
+    final scan = AllocationCheck(<Library>{}, <String>{});
+    for (final lib in loadedLibraries) {
+      if (lib.importUri.scheme != 'dart') lib.accept(scan);
+    }
+    for (final icon in scan.fonts) {
+      final row = {
+        'fontFamily': icon['fontFamily'],
+        'fontPackage': icon['fontPackage'],
+        'codePoint': icon['codePoint'],
+      };
+      hostIcons[jsonEncode(row)] = row;
+    }
+  }
   final inherited = tier == 'whole'
       ? <Map<String, Object?>>[]
       : inheritedCheck(
@@ -276,6 +325,10 @@ Future<Map<String, Object?>> compilePatch(List<String> args) async {
     'checks': checks,
     'fonts': checker.fonts,
     'dynamic_fonts': checker.dynamicFonts,
+    if (tier == 'lean')
+      'host_icons': [
+        for (final key in hostIcons.keys.toList()..sort()) hostIcons[key],
+      ],
     if (overlayTransform != null) 'overlay': overlayTransform,
     'module_libraries': module.map((l) => l.importUri.toString()).toList(),
     if (frameworkReuse != null) 'framework_reuse': frameworkReuse,

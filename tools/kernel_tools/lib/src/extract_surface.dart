@@ -18,6 +18,12 @@ class _Collector extends RecursiveVisitor {
   final Map<Constant, List<Field>> constDeclarations =
       Map<Constant, List<Field>>.identity();
 
+  /// Host redirecting factories by their target. The host kernel calls the
+  /// target directly (`NetworkImage(url)` becomes the private implementation's
+  /// constructor), while the patch compiler checks the factory the source names.
+  final Map<Member, List<Procedure>> redirectors =
+      Map<Member, List<Procedure>>.identity();
+
   _Collector(this.ownPackages);
 
   void indexConstDeclarations(Component component) {
@@ -34,12 +40,62 @@ class _Collector extends RecursiveVisitor {
       if (_isOwn(lib)) continue;
       lib.fields.forEach(index);
       for (final cls in lib.classes) {
+        for (final p in cls.procedures) {
+          final target = p.function.redirectingFactoryTarget?.target;
+          if (target != null) redirectors.putIfAbsent(target, () => []).add(p);
+        }
         if (cls.name.startsWith('_')) continue;
         for (final f in cls.fields) {
           if (f.isStatic) index(f);
         }
       }
     }
+  }
+
+  /// The member the patch validator checks for [m]: it unwraps forwarding,
+  /// mixin and signature stubs, and maps a member copied into an eliminated
+  /// mixin application (`_State&Object&Diagnosticable.toString`) back to the
+  /// mixin's own declaration (`Diagnosticable.toString`).
+  static Member origin(Member m) {
+    Member unwrap(Member m) {
+      while (m is Procedure &&
+          m.stubTarget != null &&
+          (m.stubKind == ProcedureStubKind.ConcreteForwardingStub ||
+              m.stubKind == ProcedureStubKind.ConcreteMixinStub ||
+              m.stubKind == ProcedureStubKind.MemberSignature)) {
+        m = m.stubTarget!;
+      }
+      return m;
+    }
+
+    final member = unwrap(m);
+    final cls = member.enclosingClass;
+    if (!member.isInstanceMember ||
+        cls == null ||
+        !cls.isEliminatedMixin ||
+        cls.implementedTypes.isEmpty)
+      return member;
+    final setter = member is Procedure && member.isSetter;
+    Member? lookup(Class c, Set<Class> seen) {
+      if (!seen.add(c)) return null;
+      for (final candidate in c.members) {
+        if (!candidate.isInstanceMember || candidate.name != member.name)
+          continue;
+        final isSetter = candidate is Procedure && candidate.isSetter;
+        if (setter
+            ? isSetter || (candidate is Field && candidate.hasSetter)
+            : !isSetter)
+          return candidate;
+      }
+      for (final s in c.supers) {
+        final found = lookup(s.classNode, seen);
+        if (found != null) return found;
+      }
+      return null;
+    }
+
+    final found = lookup(cls.implementedTypes.last.classNode, {});
+    return found == null ? member : unwrap(found);
   }
 
   bool _isOwn(Library lib) {
@@ -58,35 +114,44 @@ class _Collector extends RecursiveVisitor {
     return m.name.text;
   }
 
+  // Records the member as referenced and, when they differ, the declaration
+  // the patch validator resolves it to. Public members of private classes
+  // count: `requestOptions.headers` is declared by dio's `_RequestConfig`, and
+  // mixin applications are private (`_RxImpl&RxNotifier&RxObjectMixin`).
   void _addMember(Map<String, Map<String, Set<String>>> into, Member? m) {
     if (m == null) return;
-    final lib = m.enclosingLibrary;
-    if (_isOwn(lib)) return;
-    // LibraryIndex refuses to index members with a private name, so an entry
-    // naming one would fail to resolve.
-    if (m.name.isPrivate) return;
-    final cls = m.enclosingClass;
-    if (cls != null && cls.name.startsWith('_')) return;
-    final key = _memberKey(m);
-    if (key == null) return;
-    into
-        .putIfAbsent(lib.importUri.toString(), () => {})
-        .putIfAbsent(cls?.name ?? LibraryIndex.topLevel, () => {})
-        .add(key);
+    _record(into, m, _memberKey(m));
+    final o = origin(m);
+    if (!identical(o, m)) _record(into, o, _memberKey(o));
+    if (identical(into, callable)) {
+      for (final factory in redirectors[m] ?? const <Procedure>[]) {
+        _addMember(into, factory);
+      }
+    }
   }
 
   void _addSetter(Map<String, Map<String, Set<String>>> into, Member? m) {
     if (m == null) return;
+    // A field is keyed bare; only a Procedure setter carries the 'set:' prefix.
+    String key(Member m) => m is Field ? m.name.text : 'set:${m.name.text}';
+    _record(into, m, key(m));
+    final o = origin(m);
+    if (!identical(o, m)) _record(into, o, key(o));
+  }
+
+  void _record(
+    Map<String, Map<String, Set<String>>> into,
+    Member m,
+    String? key,
+  ) {
     final lib = m.enclosingLibrary;
     if (_isOwn(lib)) return;
-    if (m.name.isPrivate) return;
-    final cls = m.enclosingClass;
-    if (cls != null && cls.name.startsWith('_')) return;
-    // A field is keyed bare; only a Procedure setter carries the 'set:' prefix.
-    final key = m is Field ? m.name.text : 'set:${m.name.text}';
+    // LibraryIndex refuses to index members with a private name, so an entry
+    // naming one would fail to resolve.
+    if (m.name.isPrivate || key == null) return;
     into
         .putIfAbsent(lib.importUri.toString(), () => {})
-        .putIfAbsent(cls?.name ?? LibraryIndex.topLevel, () => {})
+        .putIfAbsent(m.enclosingClass?.name ?? LibraryIndex.topLevel, () => {})
         .add(key);
   }
 
@@ -171,6 +236,20 @@ class _Collector extends RecursiveVisitor {
     super.visitConstructorInvocation(node);
   }
 
+  // `super(...)` and `super.key`: written or implicit, these call the host
+  // constructor from the application's own constructors.
+  @override
+  void visitSuperInitializer(SuperInitializer node) {
+    _addMember(callable, node.target);
+    super.visitSuperInitializer(node);
+  }
+
+  @override
+  void visitRedirectingInitializer(RedirectingInitializer node) {
+    _addMember(callable, node.target);
+    super.visitRedirectingInitializer(node);
+  }
+
   @override
   void visitSuperMethodInvocation(SuperMethodInvocation node) {
     _addMember(callable, node.interfaceTarget);
@@ -202,19 +281,27 @@ class _Collector extends RecursiveVisitor {
     // The CFE folds `TargetPlatform.android` into a bare InstanceConstant, so
     // the field that declares it leaves no reference behind -- but a dynamic
     // module still has to be allowed to read that field. Map the value back to
-    // its declaration; only fall back to naming constructors when no const
-    // field declares it (an inline `const RoundSliderThumbShape()`).
+    // its declaration. The source may also write the constructor
+    // (`const TextMagnifierConfiguration()` equals `.disabled`), which the
+    // patch validator checks, so public constructors are named as well.
     final declarations = constDeclarations[c] ?? <Field>[];
     for (final field in declarations) {
       _addMember(callable, field);
       _addClass(canBeUsedAsType, field.enclosingClass);
     }
+    // Type arguments of constants are type uses too: `links: {}` for a
+    // `Map<String, LinkSchema>` parameter folds to a typed empty map.
+    if (c is ListConstant) c.typeArgument.accept(this);
+    if (c is SetConstant) c.typeArgument.accept(this);
+    if (c is MapConstant) {
+      c.keyType.accept(this);
+      c.valueType.accept(this);
+    }
     if (c is InstanceConstant) {
+      for (final t in c.typeArguments) t.accept(this);
       _addClass(canBeUsedAsType, c.classNode);
-      if (declarations.isEmpty) {
-        for (final ctor in c.classNode.constructors) {
-          if (!ctor.name.isPrivate) _addMember(callable, ctor);
-        }
+      for (final ctor in c.classNode.constructors) {
+        if (!ctor.name.isPrivate) _addMember(callable, ctor);
       }
       c.fieldValues.forEach((ref, value) {
         _addMember(callable, ref.asField);
@@ -246,6 +333,115 @@ class _Collector extends RecursiveVisitor {
     super.visitInterfaceType(node);
   }
 }
+
+/// Selectors invoked on `dynamic` receivers, by access kind.
+class _DynamicSelectors extends RecursiveVisitor {
+  final methods = <String>{}, getters = <String>{}, setters = <String>{};
+
+  @override
+  void visitDynamicInvocation(DynamicInvocation node) {
+    methods.add(node.name.text);
+    super.visitDynamicInvocation(node);
+  }
+
+  @override
+  void visitDynamicGet(DynamicGet node) {
+    getters.add(node.name.text);
+    super.visitDynamicGet(node);
+  }
+
+  @override
+  void visitDynamicSet(DynamicSet node) {
+    setters.add(node.name.text);
+    super.visitDynamicSet(node);
+  }
+}
+
+/// `dynamically-callable` rows for every host member a dynamic call in the
+/// application (its own code or a dependency, which the whole tier carries)
+/// can reach. Patch code like `response['code']` on a decoded JSON map then
+/// validates, and the host keeps those members dynamically invocable. A class
+/// that overrides noSuchMethod, or any supertype of one (Flutter's own
+/// `_WidgetInputBorderMapper` is a ShapeBorder), cannot be listed: the
+/// validator rejects the subtype once its supertype is dynamically-callable.
+void _dynamicRows(
+  Component component,
+  _Collector collector,
+  InterfaceDocument doc,
+) {
+  final used = _DynamicSelectors();
+  for (final lib in component.libraries) {
+    if (lib.importUri.scheme != 'dart') lib.accept(used);
+  }
+  final excluded = Set<Class>.identity(), declares = Set<Class>.identity();
+  void exclude(Class c) {
+    if (!excluded.add(c)) return;
+    for (final s in c.supers) {
+      exclude(s.classNode);
+    }
+  }
+
+  for (final lib in component.libraries) {
+    for (final cls in lib.classes) {
+      if (cls.superclass != null &&
+          cls.procedures.any(
+            (p) => p.name.text == 'noSuchMethod' && !p.isAbstract,
+          ))
+        declares.add(cls);
+    }
+  }
+  // Declares or inherits a noSuchMethod override.
+  bool forwardsNoSuchMethod(Class cls) {
+    for (Class? c = cls; c?.superclass != null; c = c!.superclass) {
+      if (declares.contains(c)) return true;
+    }
+    return false;
+  }
+
+  for (final lib in component.libraries) {
+    for (final cls in lib.classes) {
+      if (forwardsNoSuchMethod(cls)) exclude(cls);
+    }
+  }
+
+  for (final lib in component.libraries) {
+    if (collector._isOwn(lib)) continue;
+    for (final cls in lib.classes) {
+      if (cls.superclass == null ||
+          excluded.contains(cls) ||
+          forwardsNoSuchMethod(cls))
+        continue;
+      for (final m in cls.members) {
+        if (!m.isInstanceMember || m.name.isPrivate) continue;
+        final name = m.name.text;
+        final isSetter = m is Procedure && m.isSetter;
+        final isGetter = m is Field || (m is Procedure && m.isGetter);
+        final reached = isSetter
+            ? used.setters.contains(name)
+            : used.methods.contains(name) ||
+                  used.getters.contains(name) ||
+                  (m is Field && m.hasSetter && used.setters.contains(name));
+        if (!reached) continue;
+        final key = m is Field
+            ? name
+            : isSetter
+            ? 'set:$name'
+            : isGetter
+            ? 'get:$name'
+            : name;
+        doc.add(
+          'dynamically-callable',
+          '${lib.importUri}',
+          type: cls.name,
+          member: key,
+        );
+      }
+    }
+  }
+}
+
+/// The declaration the patch validator checks for a referenced member.
+Member surfaceOrigin(Member m) => _Collector.origin(m);
 
 class Surface {
   final InterfaceDocument interface;
@@ -283,6 +479,30 @@ Surface extractSurface(Component component, Set<String> own) {
       for (final sup in cls.supers) {
         collector._addClass(collector.extendable, sup.classNode);
         collector._addClass(collector.canBeUsedAsType, sup.classNode);
+      }
+      // The host dispatches to inherited host members on the application's
+      // instances (`widget.toStringShort()`, a GetxController's onStart), so
+      // they must stay callable for the module's copies of these classes.
+      final inherited = <Class>{};
+      void inherit(Class c) {
+        if (!inherited.add(c)) return;
+        if (!collector._isOwn(c.enclosingLibrary)) {
+          for (final m in c.members) {
+            if (!m.isInstanceMember) continue;
+            if (m is Procedure && m.isSetter) {
+              collector._addSetter(collector.callable, m);
+            } else {
+              collector._addMember(collector.callable, m);
+            }
+          }
+        }
+        for (final sup in c.supers) {
+          inherit(sup.classNode);
+        }
+      }
+
+      for (final sup in cls.supers) {
+        inherit(sup.classNode);
       }
       for (final member in cls.members) {
         if (!member.isInstanceMember || member.name.isPrivate) continue;
@@ -349,5 +569,6 @@ Surface extractSurface(Component component, Set<String> own) {
   classes('callable', collector.callableClasses);
   members('callable', collector.callable);
   members('can-be-overridden', collector.canBeOverridden);
+  _dynamicRows(component, collector, doc);
   return Surface(doc, barrels);
 }

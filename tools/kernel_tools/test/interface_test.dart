@@ -421,5 +421,66 @@ void main() {
       'exported declarations only',
     );
   });
+  test('real-app shapes: mixin copies, private hosts, inherited, dynamic', () {
+    final uri = Uri.parse('file:///fixture.dart');
+    final lib = library('package:get/rx.dart');
+    final object = Class(name: 'Object', fileUri: uri);
+    final mixin = Class(name: 'RxObjectMixin', fileUri: uri)
+      ..addProcedure(method('value', kind: ProcedureKind.Getter));
+    final copy = method('value', kind: ProcedureKind.Getter);
+    final application = Class(
+      name: '_RxImpl&Object&RxObjectMixin',
+      fileUri: uri,
+      supertype: Supertype(object, []),
+      implementedTypes: [Supertype(mixin, [])],
+    )..addProcedure(copy);
+    application.isEliminatedMixin = true;
+    final map = Class(
+      name: '_JsonMap',
+      fileUri: uri,
+      supertype: Supertype(object, []),
+    )..addProcedure(method('[]', kind: ProcedureKind.Operator));
+    final mock =
+        Class(name: 'Mock', fileUri: uri, supertype: Supertype(object, []))
+          ..addProcedure(method('[]', kind: ProcedureKind.Operator))
+          ..addProcedure(method('noSuchMethod'));
+    for (final c in [object, mixin, application, map, mock]) {
+      lib.addClass(c);
+    }
+    check(
+      identical(surfaceOrigin(copy), mixin.procedures.single),
+      'mixin copy resolves to the mixin declaration',
+    );
+    final app = library('package:app/main.dart');
+    final controller = Class(
+      name: 'Controller',
+      fileUri: uri,
+      supertype: Supertype(application, []),
+    );
+    app.addClass(controller);
+    final main = method('main', isStatic: true);
+    main.function.body = ExpressionStatement(
+      DynamicInvocation(
+        DynamicAccessKind.Dynamic,
+        NullLiteral(),
+        Name('[]'),
+        Arguments([IntLiteral(0)]),
+      ),
+    );
+    app.addProcedure(main);
+    final doc = extractSurface(Component(libraries: [app, lib]), {
+      'app',
+    }).interface;
+    bool has(String section, String type, String member) => doc
+        .rows(section)
+        .any((r) => r['class'] == type && r['member'] == member);
+    check(
+      has('callable', '_RxImpl&Object&RxObjectMixin', 'get:value') &&
+          has('callable', 'RxObjectMixin', 'get:value'),
+      'inherited host members callable, copy and origin',
+    );
+    check(has('dynamically-callable', '_JsonMap', '[]'), 'dynamic selector');
+    check(!has('dynamically-callable', 'Mock', '[]'), 'noSuchMethod excluded');
+  });
   print('$cases interface structural cases passed');
 }

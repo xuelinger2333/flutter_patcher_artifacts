@@ -28,6 +28,12 @@ Future<Map<String, Object?>> compilePatch(List<String> args) async {
   String value(String key) => req[key] as String;
   final tier = value('tier');
   if (!['lean', 'whole'].contains(tier)) throw FormatException('Invalid tier');
+  // The whole tier carries Flutter itself, whose platform-gated code (desktop
+  // windowing makes FFI calls) only folding Platform.isX for the target OS
+  // drops. Older CLIs send no target OS; their modules keep every branch.
+  final targetOS = req['target_os'] as String?;
+  if (targetOS != null && !['android', 'ios'].contains(targetOS))
+    throw FormatException('Invalid target_os');
   final emit = req['emit'] == true;
   final diagnostics = <Map<String, Object?>>[];
   final options = CompilerOptions()
@@ -300,6 +306,7 @@ Future<Map<String, Object?>> compilePatch(List<String> args) async {
         useGlobalTypeFlowAnalysis: true,
         treeShakeWriteOnlyFields: false,
         dynamicInterface: File(value('interface')).absolute.uri,
+        targetOS: targetOS,
       ),
     );
     module

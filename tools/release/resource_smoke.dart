@@ -118,6 +118,7 @@ void main() {
     );
     final req = {
       'tier': tier,
+      'target_os': 'android',
       'emit': true,
       'seq': 7,
       'fingerprint': 'a' * 64,

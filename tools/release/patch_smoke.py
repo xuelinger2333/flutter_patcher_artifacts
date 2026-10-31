@@ -31,7 +31,7 @@ def exercise(dart, tool, flutter, baseline, work, *, packages=None, four_check_s
             '","' + tier + '",patchedMain,null];\nvoid patchedMain() { print("patch smoke"); }\n')
         request = work / f'{tier}-request.json'
         request.write_text(json.dumps({
-            'tier': tier, 'emit': True, 'seq': 7, 'fingerprint': 'a' * 64,
+            'tier': tier, 'emit': True, 'seq': 7, 'fingerprint': 'a' * 64, 'target_os': 'android',
             'entry': 'package:patch.7.smoke/main.dart', 'packages': str(config),
             'platform': str(flutter / 'bin/cache/artifacts/engine/common/flutter_patched_sdk_product/platform_strong.dill'),
             'baseline': str(baseline), 'interface': str(interface),

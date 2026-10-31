@@ -155,9 +155,9 @@ Future<Map<String, Object?>> inspectBuild(List<String> args) async {
     if (!source.path.endsWith('.dart')) continue;
     final uri = physicalSource(source, scheme, fileSystemRoots);
     if (uri == null) continue;
-    final source = decoded(uri);
+    final location = decoded(uri);
     final candidates =
-        roots.entries.where((r) => source.startsWith(r.value)).toList()
+        roots.entries.where((r) => location.startsWith(r.value)).toList()
           ..sort((a, b) => b.value.length.compareTo(a.value.length));
     if (candidates.isEmpty) {
       // SDK internal sources are bound by the selected SDK/platform identity.
@@ -168,7 +168,7 @@ Future<Map<String, Object?>> inspectBuild(List<String> args) async {
       continue;
     }
     final match = candidates.first;
-    final relative = source.substring(match.value.length);
+    final relative = location.substring(match.value.length);
     final file = File.fromUri(uri);
     need(file.existsSync(), 'Compiled source disappeared: $uri');
     hashes['package:${match.key}/$relative'] = sha256

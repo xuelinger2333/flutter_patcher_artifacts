@@ -18,7 +18,8 @@ import 'patch_checks.dart';
 import 'detect_shape.dart';
 import 'transform_overlay.dart';
 
-const patchUsage = '  compile-patch --request <json>\n';
+const patchUsage =
+    '  compile-patch --request <json>   (optional filesystem_scheme + filesystem_roots)\n';
 
 Future<Map<String, Object?>> compilePatch(List<String> args) async {
   if (args.length != 2 || args.first != '--request')
@@ -35,14 +36,26 @@ Future<Map<String, Object?>> compilePatch(List<String> args) async {
   if (targetOS != null && !['android', 'ios'].contains(targetOS))
     throw FormatException('Invalid target_os');
   final emit = req['emit'] == true;
+  // A multi-root file system makes module sources record virtual URIs, not
+  // this run's work path: patches become reproducible and ship no local paths.
+  // `packages` is then a URI under the scheme.
+  final scheme = req['filesystem_scheme'] as String?;
+  final roots = (req['filesystem_roots'] as List?)?.cast<String>();
+  if ((scheme == null) != (roots == null))
+    throw FormatException('filesystem_scheme and filesystem_roots go together');
   final diagnostics = <Map<String, Object?>>[];
   final options = CompilerOptions()
     ..sdkSummary = File(value('platform')).absolute.uri
-    ..fileSystem = createFrontEndFileSystem(null, null)
+    ..fileSystem = createFrontEndFileSystem(scheme, [
+      for (final root in roots ?? const <String>[])
+        Directory(root).absolute.uri.toString(),
+    ])
     ..additionalDillModules = [
       if (tier == 'lean') File(value('baseline')).absolute.uri,
     ]
-    ..packagesFileUri = File(value('packages')).absolute.uri
+    ..packagesFileUri = scheme == null
+        ? File(value('packages')).absolute.uri
+        : Uri.parse(value('packages'))
     ..dynamicInterfaceSpecificationUri = File(value('interface')).absolute.uri
     ..allowDynamicCallsInDynamicModules = tier == 'whole'
     ..dynamicCallsSelectorAllowList = tier == 'whole'

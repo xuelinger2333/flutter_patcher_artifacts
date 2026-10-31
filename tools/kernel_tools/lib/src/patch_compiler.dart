@@ -19,7 +19,7 @@ import 'detect_shape.dart';
 import 'transform_overlay.dart';
 
 const patchUsage =
-    '  compile-patch --request <json>   (optional filesystem_scheme + filesystem_roots)\n';
+    '  compile-patch --request <json>   (optional filesystem_scheme + filesystem_roots, environment_defines)\n';
 
 Future<Map<String, Object?>> compilePatch(List<String> args) async {
   if (args.length != 2 || args.first != '--request')
@@ -43,6 +43,10 @@ Future<Map<String, Object?>> compilePatch(List<String> args) async {
   final roots = (req['filesystem_roots'] as List?)?.cast<String>();
   if ((scheme == null) != (roots == null))
     throw FormatException('filesystem_scheme and filesystem_roots go together');
+  // The host release's compile-time environment (dart.vm.product, flavor):
+  // without it kReleaseMode and fromEnvironment constants in the module
+  // evaluate as in a debug build.
+  final defines = (req['environment_defines'] as Map?)?.cast<String, String>();
   final diagnostics = <Map<String, Object?>>[];
   final options = CompilerOptions()
     ..sdkSummary = File(value('platform')).absolute.uri
@@ -53,6 +57,7 @@ Future<Map<String, Object?>> compilePatch(List<String> args) async {
     ..additionalDillModules = [
       if (tier == 'lean') File(value('baseline')).absolute.uri,
     ]
+    ..environmentDefines = defines ?? const {}
     ..packagesFileUri = scheme == null
         ? File(value('packages')).absolute.uri
         : Uri.parse(value('packages'))
@@ -320,6 +325,7 @@ Future<Map<String, Object?>> compilePatch(List<String> args) async {
         treeShakeWriteOnlyFields: false,
         dynamicInterface: File(value('interface')).absolute.uri,
         targetOS: targetOS,
+        environmentDefines: defines ?? const {},
       ),
     );
     module

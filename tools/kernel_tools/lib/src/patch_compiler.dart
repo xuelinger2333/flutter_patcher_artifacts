@@ -328,7 +328,11 @@ Future<Map<String, Object?>> compilePatch(List<String> args) async {
         .map((l) => l.importUri.toString())
         .toList();
     if (frameworkReuse != null) report['framework_reuse'] = frameworkReuse;
-    if (after.issues.isNotEmpty || ffiAfter.issues.isNotEmpty)
+    // Without a target OS, Flutter's code for every platform stays in the
+    // module (3.47 desktop windowing makes FFI calls), so only CLIs that send
+    // one get the post-TFA FFI rejection; older ones keep their behavior.
+    if (after.issues.isNotEmpty ||
+        (targetOS != null && ffiAfter.issues.isNotEmpty))
       return {
         'status': 'rejected',
         ...report,

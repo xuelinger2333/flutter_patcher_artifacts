@@ -36,7 +36,7 @@ def exercise(dart, tool, flutter, baseline, work, *, packages=None, four_check_s
             'platform': str(flutter / 'bin/cache/artifacts/engine/common/flutter_patched_sdk_product/platform_strong.dill'),
             'baseline': str(baseline), 'interface': str(interface),
             'compiler_interface': str(detailed), 'allocated': str(allocated),
-            'resources': False, 'own': ['patch.7.smoke'], 'original_own': ['smoke'],
+            'own': ['patch.7.smoke'], 'original_own': ['smoke'],
             'out': str(work / f'{tier}.bc')}))
         result = subprocess.run([str(dart), str(tool), 'compile-patch', '--request', str(request)],
                                 text=True, capture_output=True, check=True)
@@ -60,7 +60,7 @@ def exercise(dart, tool, flutter, baseline, work, *, packages=None, four_check_s
             'Object? dynamicModuleEntrypoint() => <Object?>[1,7,"' + 'a' * 64 +
             '","lean",sample.main,null];\n')
         check = json.loads(request.read_text())
-        check.update(tier='lean', emit=False, resources=True)
+        check.update(tier='lean', emit=False)
         four = work / 'four-checks.json'
         four.write_text(json.dumps(check))
         result = subprocess.run([str(dart), str(tool), 'compile-patch', '--request', str(four)],
@@ -71,7 +71,6 @@ def exercise(dart, tool, flutter, baseline, work, *, packages=None, four_check_s
             assert report['checks'][category], report
             assert all(row.get('file') and row.get('line') and row.get('column')
                        for row in report['checks'][category]), report
-        assert report['checks']['resources']['verdict'] == 'INJECTABLE_HOLE', report
         results['four_checks'] = report
     (work / 'verification.json').write_text(json.dumps(results, indent=2) + '\n')
     return results

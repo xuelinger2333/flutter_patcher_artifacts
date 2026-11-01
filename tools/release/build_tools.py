@@ -71,24 +71,12 @@ def check_compiler_help(help_text):
     require('--[no-]tfa' in help_text and '--[no-]aot-only' in help_text, 'Patched compiler flags missing')
 
 
-def smoke(dart, release, version, fixtures, answers):
+def smoke(dart, release, version):
     outputs = names(version)
     help_text = run(dart, release / outputs['tools'], '--help', capture=True)
-    require('detect-shape' in help_text, 'kernel-tools --help failed')
+    require('compile-patch' in help_text, 'kernel-tools --help failed')
     help_text = run(dart, release / outputs['tools'], 'bytecode', '--help', capture=True)
     check_compiler_help(help_text)
-    results = []
-    import json
-    for case in answers:
-        text = run(dart, release / outputs['tools'], 'detect-shape',
-                   '--dill', fixtures / (case['name'] + '.dill'), '--own', 'shape_fixtures',
-                   '--exclude', 'overlay_helper.dart', capture=True)
-        result = json.loads(text)
-        require(result['verdict'] == case['verdict'], f"Wrong verdict: {case['name']}")
-        require(len(result['injectionPoints']) == case['injection_points'], f"Wrong injection count: {case['name']}")
-        require(len(result['bypasses']) == case['bypasses'], f"Wrong bypass count: {case['name']}")
-        results.append({'name': case['name'], **result})
-    return results
 
 
 def compiler_smoke(dart, release, version, source, flutter, work):
@@ -107,21 +95,6 @@ def compiler_smoke(dart, release, version, source, flutter, work):
             '--target', 'flutter', '--validate', interface, flag, '-o', output,
             source / 'tools/kernel_tools/test/fixtures/compiler_module.dart')
         require(output.is_file() and output.stat().st_size > 0, 'Compiler smoke produced no bytecode')
-
-
-def transform_smoke(dart, release, version, fixtures, work):
-    import json
-    snapshot = release / names(version)['tools']
-    for index, count, verdict in ((4, 2, 'INJECTABLE'), (7, 1, 'INJECTABLE_HOLE')):
-        output = work / f'transformed-shape{index}.dill'
-        result = json.loads(run(dart, snapshot, 'transform-overlay', '--dill', fixtures / f'shape{index}.dill',
-                            '--own', 'shape_fixtures', '--out', output,
-                            '--helper-lib', 'package:shape_fixtures/overlay_helper.dart',
-                            '--helper-fn', 'patcherOverlayBundle', capture=True))
-        require(result == {'wrapped': count}, 'Wrong transformed injection count')
-        result = json.loads(run(dart, snapshot, 'detect-shape', '--dill', output, '--own', 'shape_fixtures',
-                                '--exclude', 'overlay_helper.dart', capture=True))
-        require(result['verdict'] == verdict, 'Transformation changed resource-bypass classification')
 
 
 def partition_smoke(dart, release, version, flutter, fixtures, work):
@@ -205,7 +178,6 @@ def build(args):
     dart = hosts.dart_binary(HOST, flutter)
     run(dart, 'pub', 'get', '--enforce-lockfile', cwd=package)
     config = package / '.dart_tool/package_config.json'
-    run(dart, f'--packages={config}', package / 'test/detect_shape_test.dart', cwd=package)
     run(dart, f'--packages={config}', package / 'test/interface_test.dart', cwd=package)
     run(dart, f'--packages={config}', package / 'test/build_inspection_test.dart', cwd=package)
     run(dart, f'--packages={config}', package / 'test/patch_checks_test.dart', cwd=package)
@@ -213,8 +185,6 @@ def build(args):
     run(dart, f'--packages={config}', package / 'test/framework_partition_test.dart', cwd=package)
     run(hosts.flutter_launcher(HOST, flutter), '--suppress-analytics', 'precache', '--android')
     fixtures = compile_fixtures(flutter, source)
-    answers = read_json(package / 'test/fixtures/expected.json')
-    require(len(answers) == 9, 'Nine fixture answers required')
     patches_record = [{'file': p.name, 'sha256': sha256(p)} for p in patches]
     run(sys.executable, REPO / 'tools/generators/protocol_set/embed_definitions.py', '--check')
     for attempt in ('first', 'second'):
@@ -228,11 +198,9 @@ def build(args):
         run(dart, release / files['tools'], 'gen-platform-privates',
             '--platform', flutter / 'bin/cache/artifacts/engine/common/flutter_patched_sdk_product/platform_strong.dill',
             '--out', work / f'{attempt}-privates.yaml')
-        results = smoke(dart, release, args.version, fixtures, answers)
-        write_json(work / f'{attempt}-smoke.json', results)
+        smoke(dart, release, args.version)
         create(release, args.version, metadata, commit, pin['dart_commit'], patches_record)
     compare(work / 'first', work / 'second')
-    transform_smoke(dart, work / 'first', args.version, fixtures, work)
     partition_verification = partition_smoke(dart, work / 'first', args.version,
                                              flutter, fixtures, work)
     baseline_smoke(dart, work / 'first' / names(args.version)['tools'], flutter, source, work)
@@ -241,11 +209,6 @@ def build(args):
                                        flutter, work / 'baseline-smoke/app.dill', work / 'patch-smoke',
                                        packages=source / 'tools/kernel_tools/test/fixtures/.dart_tool/package_config.json',
                                        four_check_source=source / 'tools/kernel_tools/test/fixtures/patch/four_checks.dart')
-    run(dart, f'--packages={config}', source / 'tools/release/resource_smoke.dart',
-        work, work / 'first' / names(args.version)['tools'], work / 'baseline-smoke', flutter,
-        source / 'tools/kernel_tools/test/fixtures/resources/overlay.dart',
-        source / 'tools/kernel_tools/test/fixtures/.dart_tool/package_config.json')
-    resource_verification = read_json(work / 'tool-smoke.json')
     compiler_smoke(dart, work / 'first', args.version, source, flutter, work)
     from fault_modules import build as build_fault_modules
     build_fault_modules(dart, work / 'first' / names(args.version)['tools'],
@@ -257,12 +220,11 @@ def build(args):
     require(git('diff', '--full-index', '--binary', cwd=sdk) == expected_diff, 'Dart source changed during build')
     require(git('rev-parse', 'HEAD') == commit and not git('status', '--porcelain'), 'Builder source changed during build')
     elapsed = round(time.monotonic() - start, 2)
-    write_json(work / 'verification.json', {'reproducibility': 'passed', 'snapshot_smoke': 'passed_9_of_9',
+    write_json(work / 'verification.json', {'reproducibility': 'passed',
                'kernel_tools_help': 'passed', 'dart2bytecode_help': 'passed',
                'dart2bytecode_compilation': 'passed_aot_only_and_tfa', 'elapsed_seconds': elapsed,
                'builder_repo_commit': commit, 'flutter_version': args.version,
                'interfaces': interface_verification, 'patch': patch_verification,
-               'resources': resource_verification,
                'framework_partition': partition_verification,
                'fault_modules': read_json(work / 'fault-modules/modules.json')})
     shutil.copytree(work / 'first', output)

@@ -12,7 +12,7 @@ assert_commit "$DEPOT_TOOLS_DIR" "$(cat "$BUILDER_REPO/DEPOT_TOOLS_REV")"
 export PATH="$DEPOT_TOOLS_DIR:$PATH"
 require_commands ninja python3
 python3 "$BUILDER_REPO/engine/scripts/source_state.py" check-clean "$ENGINE_CHECKOUT"
-[[ ! -e $ENGINE_CACHE/applied.patch ]] || die 'fetch_engine must prepare an unpatched checkout'
+[[ ! -e $ENGINE_CACHE/applied.patch && ! -e $ENGINE_CACHE/applied-flutter.patch ]] || die 'fetch_engine must prepare an unpatched checkout'
 DART="$ENGINE_SRC/flutter/third_party/dart"
 PATCHES=("$BUILDER_REPO"/engine_patches/*.patch)
 [[ -f ${PATCHES[0]} ]] || die 'no engine patches'
@@ -20,6 +20,14 @@ git -C "$DART" apply --check "${PATCHES[@]}"
 git -C "$DART" apply "${PATCHES[@]}"
 git -C "$DART" diff --full-index --binary HEAD > "$ENGINE_CACHE/applied.patch"
 [[ -s $ENGINE_CACHE/applied.patch ]] || die 'engine patches made no changes'
+# engine_patches/flutter/ patches apply in the Flutter monorepo itself.
+FLUTTER_PATCHES=("$BUILDER_REPO"/engine_patches/flutter/*.patch)
+if [[ -f ${FLUTTER_PATCHES[0]} ]]; then
+  git -C "$ENGINE_CHECKOUT" apply --check "${FLUTTER_PATCHES[@]}"
+  git -C "$ENGINE_CHECKOUT" apply "${FLUTTER_PATCHES[@]}"
+  git -C "$ENGINE_CHECKOUT" diff --full-index --binary HEAD > "$ENGINE_CACHE/applied-flutter.patch"
+  [[ -s $ENGINE_CACHE/applied-flutter.patch ]] || die 'flutter engine patches made no changes'
+fi
 cd "$ENGINE_SRC"
 # Fixed recipe and targets; no workflow GN flag overrides.
 ./flutter/tools/gn --android --android-cpu arm64 --runtime-mode release \
@@ -40,6 +48,12 @@ assert_commit "$ENGINE_CHECKOUT" "$COMMIT"
 assert_commit "$DEPOT_TOOLS_DIR" "$(cat "$BUILDER_REPO/DEPOT_TOOLS_REV")"
 git -C "$DART" diff --full-index --binary HEAD > "$ENGINE_CACHE/current.patch"
 cmp "$ENGINE_CACHE/applied.patch" "$ENGINE_CACHE/current.patch" || die 'source patch changed during build'
+git -C "$ENGINE_CHECKOUT" diff --full-index --binary HEAD > "$ENGINE_CACHE/current.patch"
+if [[ -f $ENGINE_CACHE/applied-flutter.patch ]]; then
+  cmp "$ENGINE_CACHE/applied-flutter.patch" "$ENGINE_CACHE/current.patch" || die 'source patch changed during build'
+else
+  [[ ! -s $ENGINE_CACHE/current.patch ]] || die 'unrecorded flutter source edits'
+fi
 rm -- "$ENGINE_CACHE/current.patch"
 python3 "$BUILDER_REPO/engine/scripts/source_state.py" record-build \
   "$BUILDER_REPO" "$ENGINE_CHECKOUT" "$RESOLVED" "$IDENTITY"

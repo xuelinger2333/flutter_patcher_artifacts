@@ -200,18 +200,35 @@ class Pipeline:
         require(self.git(self.depot, 'rev-parse', 'HEAD') == depot_rev, 'depot_tools changed during sync')
         check_clean(self.engine)
 
+    def patch_targets(self):
+        """(checkout, record, patches) per patched checkout. Shared patches bind
+        every host to the same engine semantics: engine_patches/*.patch apply in
+        the Dart checkout, engine_patches/flutter/*.patch in the Flutter
+        monorepo. Host-only patches (engine_patches/<host>/) fix code paths that
+        only this host's toolchain compiles and are recorded separately in the
+        manifest."""
+        return [
+            (self.src / 'flutter/third_party/dart', self.cache / 'applied.patch',
+             sorted((REPO / 'engine_patches').glob('*.patch')) + self.host_patch_files()),
+            (self.engine, self.cache / 'applied-flutter.patch',
+             sorted((REPO / 'engine_patches/flutter').glob('*.patch'))),
+        ]
+
+    def current_patches(self):
+        return [self.git(checkout, 'diff', '--full-index', '--binary', 'HEAD')
+                for checkout, _, _ in self.patch_targets()]
+
     def revert_previous_patch(self):
-        """Undo exactly the patch a previous run applied; unknown edits stop the job."""
-        previous = self.cache / 'applied.patch'
-        if not previous.is_file():
-            return
-        dart = self.src / 'flutter/third_party/dart'
-        require((dart / '.git').exists(), 'recorded patched Dart checkout missing')
-        current = self.git(dart, 'diff', '--full-index', '--binary', 'HEAD')
-        require(current == read_patch(previous), 'cached patch differs from recorded patch')
-        self.run('git', '-C', dart, 'apply', '--reverse', '--check', previous)
-        self.run('git', '-C', dart, 'apply', '--reverse', previous)
-        previous.unlink()
+        """Undo exactly the patches a previous run applied; unknown edits stop the job."""
+        for checkout, previous, _ in self.patch_targets():
+            if not previous.is_file():
+                continue
+            require((checkout / '.git').exists(), f'recorded patched checkout missing: {checkout}')
+            current = self.git(checkout, 'diff', '--full-index', '--binary', 'HEAD')
+            require(current == read_patch(previous), 'cached patch differs from recorded patch')
+            self.run('git', '-C', checkout, 'apply', '--reverse', '--check', previous)
+            self.run('git', '-C', checkout, 'apply', '--reverse', previous)
+            previous.unlink()
 
     def host_patch_files(self):
         return sorted((REPO / 'engine_patches' / self.host).glob('*.patch'))
@@ -220,19 +237,18 @@ class Pipeline:
         return [{'file': path.name, 'sha256': sha256(path)} for path in self.host_patch_files()]
 
     def apply_patches(self):
-        require(not (self.cache / 'applied.patch').exists(), 'fetch must leave an unpatched checkout')
-        dart = self.src / 'flutter/third_party/dart'
-        # Shared patches bind every host to the same engine semantics; host-only
-        # patches (engine_patches/<host>/) fix code paths that only this host's
-        # toolchain compiles and are recorded separately in the manifest.
-        patches = sorted((REPO / 'engine_patches').glob('*.patch')) + self.host_patch_files()
-        require(bool(patches), 'no engine patches')
-        self.run('git', '-C', dart, 'apply', '--check', *patches)
-        self.run('git', '-C', dart, 'apply', *patches)
-        applied = self.git(dart, 'diff', '--full-index', '--binary', 'HEAD')
-        require(bool(applied), 'engine patches made no changes')
-        write_patch(self.cache / 'applied.patch', applied)
-        return applied
+        targets = self.patch_targets()
+        require(bool(targets[0][2]), 'no engine patches')
+        for checkout, record, patches in targets:
+            require(not record.exists(), 'fetch must leave an unpatched checkout')
+            if not patches:
+                continue
+            self.run('git', '-C', checkout, 'apply', '--check', *patches)
+            self.run('git', '-C', checkout, 'apply', *patches)
+            applied = self.git(checkout, 'diff', '--full-index', '--binary', 'HEAD')
+            require(bool(applied), 'engine patches made no changes')
+            write_patch(record, applied)
+        return self.current_patches()
 
     def check_windows_sdk(self):
         """The engine pins one Windows SDK for local builds; fail before GN if it is absent."""
@@ -333,8 +349,7 @@ class Pipeline:
         self.fetch(resolved['engine_commit'])
         applied = self.apply_patches()
         binary = self.build_snapshot(jobs)
-        require(self.git(self.src / 'flutter/third_party/dart', 'diff', '--full-index', '--binary', 'HEAD') == applied,
-                'source patch changed during build')
+        require(self.current_patches() == applied, 'source patch changed during build')
         require(self.git(REPO, 'rev-parse', 'HEAD') == builder_commit and not self.git(REPO, 'status', '--porcelain'),
                 'builder repository changed during build')
         sdk = Path(resolved['flutter_sdk'])

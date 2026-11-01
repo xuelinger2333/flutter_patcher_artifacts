@@ -6,7 +6,6 @@ Only that file is listed in `tools.manifest.json`. Users never compile this dill
 
 Implemented subcommands:
 
-- `detect-shape` and `transform-overlay`: asset-overlay injection-point detection and the matching kernel transform.
 - `bytecode`: forwards arguments to the patched dart2bytecode entry point.
 - `gen-protocol-interface --dill <linked-flutter.dill> --out <file>`.
 - `gen-platform-privates --platform <platform.dill> --out <file>`.

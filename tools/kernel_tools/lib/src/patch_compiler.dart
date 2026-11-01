@@ -15,8 +15,6 @@ import 'package:yaml/yaml.dart';
 import 'package:_fe_analyzer_shared/src/messages/diagnostic_message.dart'
     show getMessageCharOffset;
 import 'patch_checks.dart';
-import 'detect_shape.dart';
-import 'transform_overlay.dart';
 
 const patchUsage =
     '  compile-patch --request <json>   (optional filesystem_scheme + filesystem_roots, environment_defines)\n';
@@ -244,28 +242,6 @@ Future<Map<String, Object?>> compilePatch(List<String> args) async {
   }
   final allocationData =
       jsonDecode(await File(value('allocated')).readAsString()) as Map;
-  Map<String, Object?>? resourceShape, overlayTransform;
-  if (req['resources'] == true) {
-    resourceShape = detectShape(
-      component,
-      (req['own'] as List).cast<String>().toSet(),
-      excluded: ['__patch_entry.dart', '__patch_overlay.dart'],
-    );
-    if (req['overlay_library'] is String &&
-        diagnostics.isEmpty &&
-        resourceShape['verdict'] == 'INJECTABLE') {
-      overlayTransform = transformOverlayComponent(
-        component,
-        (req['own'] as List).cast<String>().toSet(),
-        value('overlay_library'),
-        'patcherOverlayBundle',
-      );
-      if ((overlayTransform['wrapped'] as int) !=
-          (resourceShape['injectionPoints'] as List).length) {
-        throw StateError('Overlay injection count differs from detection');
-      }
-    }
-  }
   final checker = AllocationCheck(
     loadedLibraries,
     (allocationData['classes'] as List).cast<String>().toSet(),
@@ -308,12 +284,7 @@ Future<Map<String, Object?>> compilePatch(List<String> args) async {
     'allocation': checker.issues,
     'inherited': inherited,
     'ffi': ffi.issues,
-    'resources': <Object>[],
   };
-  // Resources are installed outside this tool; always report shape before gating.
-  if (req['resources'] == true) {
-    checks['resources'] = resourceShape!;
-  }
   final report = <String, Object?>{
     'tier': tier,
     'checks': checks,
@@ -322,7 +293,6 @@ Future<Map<String, Object?>> compilePatch(List<String> args) async {
     'host_icons': [
       for (final key in hostIcons.keys.toList()..sort()) hostIcons[key],
     ],
-    if (overlayTransform != null) 'overlay': overlayTransform,
     'module_libraries': module.map((l) => l.importUri.toString()).toList(),
     if (frameworkReuse != null) 'framework_reuse': frameworkReuse,
   };

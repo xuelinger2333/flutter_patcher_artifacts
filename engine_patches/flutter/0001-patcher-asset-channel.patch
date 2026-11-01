@@ -1,0 +1,135 @@
+diff --git a/engine/src/flutter/shell/common/engine.cc b/engine/src/flutter/shell/common/engine.cc
+index f501b8a89e5e96689b5f21e561ab24777f8ac98b..f735857a25ac9df17a46d5507adf5717682dc6b7 100644
+--- a/engine/src/flutter/shell/common/engine.cc
++++ b/engine/src/flutter/shell/common/engine.cc
+@@ -5,6 +5,7 @@
+ #include "flutter/shell/common/engine.h"
+ 
+ #include <cstring>
++#include <map>
+ #include <memory>
+ #include <string>
+ #include <utility>
+@@ -26,11 +27,91 @@ static constexpr char kNavigationChannel[] = "flutter/navigation";
+ static constexpr char kLocalizationChannel[] = "flutter/localization";
+ static constexpr char kSettingsChannel[] = "flutter/settings";
+ static constexpr char kIsolateChannel[] = "flutter/isolate";
++static constexpr char kPatcherAssetChannel[] = "flutter_patcher/assets";
+ 
+ namespace {
+ fml::MallocMapping MakeMapping(const std::string& str) {
+   return fml::MallocMapping::Copy(str.c_str(), str.length());
+ }
++
++// flutter_patcher: assets of an authenticated patch, installed by the app
++// before runApp and consulted before the application bundle, so rootBundle,
++// images, fonts and shaders all see the patched bytes.
++class PatcherAssetResolver final : public AssetResolver {
++ public:
++  using Assets = std::map<std::string, std::shared_ptr<std::vector<uint8_t>>>;
++
++  explicit PatcherAssetResolver(Assets assets) : assets_(std::move(assets)) {}
++
++  bool IsValid() const override { return true; }
++
++  bool IsValidAfterAssetManagerChange() const override { return true; }
++
++  // A type no embedder replaces through UpdateResolverByType.
++  AssetResolverType GetType() const override { return kAssetManager; }
++
++  std::unique_ptr<fml::Mapping> GetAsMapping(
++      const std::string& asset_name) const override {
++    auto found = assets_.find(asset_name);
++    if (found == assets_.end()) {
++      return nullptr;
++    }
++    std::shared_ptr<std::vector<uint8_t>> bytes = found->second;
++    return std::make_unique<fml::NonOwnedMapping>(
++        bytes->data(), bytes->size(), [bytes](const uint8_t*, size_t) {});
++  }
++
++  bool operator==(const AssetResolver& other) const override {
++    return this == &other;
++  }
++
++ private:
++  const Assets assets_;
++};
++
++// u32 count, then per asset: u32 key size, key, u32 byte size, bytes; all
++// little-endian. Keys are unique and nonempty, and nothing may follow.
++bool ParsePatcherAssets(const fml::Mapping& data,
++                        PatcherAssetResolver::Assets* assets) {
++  const uint8_t* cursor = data.GetMapping();
++  size_t left = data.GetSize();
++  auto read_u32 = [&](uint32_t* value) {
++    if (left < 4) {
++      return false;
++    }
++    *value = static_cast<uint32_t>(cursor[0]) |
++             static_cast<uint32_t>(cursor[1]) << 8 |
++             static_cast<uint32_t>(cursor[2]) << 16 |
++             static_cast<uint32_t>(cursor[3]) << 24;
++    cursor += 4;
++    left -= 4;
++    return true;
++  };
++  uint32_t count = 0;
++  if (!read_u32(&count)) {
++    return false;
++  }
++  for (uint32_t i = 0; i < count; i++) {
++    uint32_t key_size = 0;
++    if (!read_u32(&key_size) || key_size == 0 || key_size > left) {
++      return false;
++    }
++    std::string key(reinterpret_cast<const char*>(cursor), key_size);
++    cursor += key_size;
++    left -= key_size;
++    uint32_t size = 0;
++    if (!read_u32(&size) || size > left) {
++      return false;
++    }
++    auto bytes = std::make_shared<std::vector<uint8_t>>(cursor, cursor + size);
++    cursor += size;
++    left -= size;
++    if (!assets->emplace(std::move(key), std::move(bytes)).second) {
++      return false;
++    }
++  }
++  return left == 0;
++}
+ }  // namespace
+ 
+ Engine::Engine(
+@@ -548,6 +629,30 @@ void Engine::SetSemanticsTreeEnabled(bool enabled) {
+ void Engine::HandlePlatformMessage(std::unique_ptr<PlatformMessage> message) {
+   if (message->channel() == kAssetChannel) {
+     HandleAssetPlatformMessage(std::move(message));
++  } else if (message->channel() == kPatcherAssetChannel) {
++    // flutter_patcher: replies 1 once the assets are installed, empty if the
++    // payload is malformed. An engine without this branch forwards the
++    // message to the embedder, which replies empty as well.
++    fml::RefPtr<PlatformMessageResponse> response = message->response();
++    PatcherAssetResolver::Assets assets;
++    bool installed = asset_manager_ && message->hasData() &&
++                     ParsePatcherAssets(message->data(), &assets);
++    if (installed) {
++      const bool fonts = assets.count("FontManifest.json") > 0;
++      installed = asset_manager_->PushFront(
++          std::make_unique<PatcherAssetResolver>(std::move(assets)));
++      if (installed && fonts && settings_.use_asset_fonts) {
++        font_collection_->RegisterFonts(asset_manager_);
++      }
++    }
++    if (response) {
++      if (installed) {
++        response->Complete(
++            std::make_unique<fml::DataMapping>(std::vector<uint8_t>{1}));
++      } else {
++        response->CompleteEmpty();
++      }
++    }
+   } else {
+     delegate_.OnEngineHandlePlatformMessage(std::move(message));
+   }

@@ -33,3 +33,21 @@ host to one release.
   unavailable, i.e. clang-cl on Windows) still calls the removed `FATAL1`
   macro; upstream never builds `dart_dynamic_modules` on a Windows host.
   Replaces it with the variadic `FATAL`, two call sites, no behaviour change.
+
+## Flutter monorepo patches
+
+`flutter/*.patch` apply with `git -C <engine> apply` in the Flutter monorepo
+itself (paths start with `engine/src/flutter/`), after the Dart patches. They
+are shared patches: listed in the same `patches` identity, and every pipeline
+records and reverts them like the Dart ones (`cache/applied-flutter.patch`).
+File names must differ from the Dart patches'.
+
+- `flutter/0001-patcher-asset-channel.patch` changes only
+  `shell/common/engine.cc`. The engine answers the `flutter_patcher/assets`
+  platform message: a payload of authenticated patch assets (u32 count, then
+  per asset u32 key size, key, u32 byte size, bytes; little-endian) becomes an
+  in-memory resolver in front of the application bundle, and the fonts are
+  registered again when it carries a `FontManifest.json`. It replies `1`, or
+  empty for a malformed payload; an engine without the patch forwards the
+  message to the embedder, which also replies empty. The CLI accepts asset
+  changes only for hosts whose engine release lists this patch.

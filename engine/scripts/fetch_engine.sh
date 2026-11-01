@@ -34,6 +34,14 @@ if [[ -f $PREVIOUS ]]; then
   git -C "$DART" apply --reverse "$PREVIOUS"
   rm -- "$PREVIOUS" "$ENGINE_CACHE/current.patch"
 fi
+PREVIOUS="$ENGINE_CACHE/applied-flutter.patch"
+if [[ -f $PREVIOUS ]]; then
+  git -C "$ENGINE_CHECKOUT" diff --full-index --binary HEAD > "$ENGINE_CACHE/current.patch"
+  cmp "$PREVIOUS" "$ENGINE_CACHE/current.patch" || die 'cached flutter patch differs from recorded patch'
+  git -C "$ENGINE_CHECKOUT" apply --reverse --check "$PREVIOUS"
+  git -C "$ENGINE_CHECKOUT" apply --reverse "$PREVIOUS"
+  rm -- "$PREVIOUS" "$ENGINE_CACHE/current.patch"
+fi
 if git -C "$ENGINE_CHECKOUT" rev-parse --verify HEAD >/dev/null 2>&1; then
   python3 "$BUILDER_REPO/engine/scripts/source_state.py" check-clean "$ENGINE_CHECKOUT"
 fi

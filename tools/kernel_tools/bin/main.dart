@@ -12,13 +12,9 @@ import '../../generators/gen_platform_privates.dart' as privates;
 import 'package:flutter_patcher_kernel_tools/src/framework_partition.dart'
     as frameworkPartition;
 import '../../generators/protocol_set/generate.dart' as protocol;
-import 'kernel_tools.dart' as shapes;
 
 const usage = '''flutter_patcher_tools
   compile-baseline <pinned gen_kernel arguments...>
-  detect-shape --dill <input> --own <pkg,...> [--exclude <substring,...>]
-  transform-overlay --dill <input> --own <pkg,...> --out <output>
-                    --helper-lib <library-uri> --helper-fn <function>
   bytecode <dart2bytecode arguments...>
   gen-protocol-interface --dill <linked-flutter.dill> --out <protocol.yaml>
   gen-platform-privates --platform <platform.dill> --out <privates.yaml>\n  gen-framework-partition --platform <platform.dill> --dill <linked-flutter.dill> --out <partition.yaml>\n''';
@@ -113,6 +109,7 @@ Future<void> main(List<String> args) async {
         exitCode = error is ArgumentError ? 64 : 1;
       }
     default:
-      await shapes.main(args);
+      stderr.write(usage);
+      exitCode = 64;
   }
 }

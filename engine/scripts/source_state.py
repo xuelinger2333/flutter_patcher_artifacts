@@ -17,8 +17,11 @@ def git(path, *args):
 
 
 def patches(repo):
-    paths = sorted((Path(repo) / 'engine_patches').glob('*.patch'))
+    """Shared patches: the Dart checkout's, then the Flutter monorepo's (flutter/)."""
+    root = Path(repo) / 'engine_patches'
+    paths = sorted(root.glob('*.patch')) + sorted((root / 'flutter').glob('*.patch'))
     require(bool(paths), 'no engine patches')
+    require(len({path.name for path in paths}) == len(paths), 'engine patch names must be unique')
     return [{'file': path.name, 'sha256': sha256(path)} for path in paths]
 
 

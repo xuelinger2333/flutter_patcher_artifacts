@@ -68,8 +68,7 @@ class IosPipeline(Pipeline):
         self.fetch(resolved['engine_commit'])
         applied = self.apply_patches()
         framework, snapshot = self.build_engine(jobs)
-        require(self.git(self.src / 'flutter/third_party/dart', 'diff', '--full-index', '--binary', 'HEAD') == applied,
-                'source patch changed during build')
+        require(self.current_patches() == applied, 'source patch changed during build')
         require(self.git(REPO, 'rev-parse', 'HEAD') == builder_commit and not self.git(REPO, 'status', '--porcelain'),
                 'builder repository changed during build')
         sdk = Path(resolved['flutter_sdk'])

@@ -42,7 +42,7 @@ InterfaceDocument interfaceDefaults(
   if (libraries.containsKey(
     'package:flutter_patcher/src/patch_bootstrap.dart',
   )) {
-    // Retain the actual bootstrap/overlay dependencies while building the host.
+    // Retain the actual bootstrap dependencies while building the host.
     // Patch compilation still validates against this immutable host contract.
     doc.merge(
       extractSurface(component, {

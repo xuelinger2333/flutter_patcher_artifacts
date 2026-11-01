@@ -11,7 +11,7 @@ import 'trim_interface.dart';
 import 'interface_details.dart';
 
 const interfaceUsage = '''
-  extract-surface --dill <app.dill> --own <pkg,...> --out-iface <yaml> --out-trim-iface <yaml>
+  extract-surface --dill <app.dill> --own <pkg,...> [--scan <pkg,...>] --out-iface <yaml> --out-trim-iface <yaml>
   merge-interface --dill <linked.dill> --iface <yaml> --trim-iface <yaml> --protocol <yaml>
                   --mode lean|whole [--platform-privates <yaml>] [--additions <yaml>]
                   --out-iface <yaml> --out-trim-iface <yaml>
@@ -33,7 +33,13 @@ Future<Map<String, Object?>> interfaceCommand(
       '--out',
       '--out-platform',
     },
-    'extract-surface' => {'--dill', '--own', '--out-iface', '--out-trim-iface'},
+    'extract-surface' => {
+      '--dill',
+      '--own',
+      '--scan',
+      '--out-iface',
+      '--out-trim-iface',
+    },
     'resolve-interface-hints' => {'--dill', '--own', '--log', '--out'},
     'merge-interface' => {
       '--dill',
@@ -113,7 +119,14 @@ Future<Map<String, Object?>> interfaceCommand(
     throw const FormatException('Interface outputs must be distinct');
   }
   if (command == 'extract-surface') {
-    final surface = extractSurface(component, own());
+    final scan = (options['--scan'] ?? '')
+        .split(',')
+        .where((s) => s.isNotEmpty)
+        .toSet();
+    if (scan.any((s) => !RegExp(r'^[a-zA-Z_][a-zA-Z_0-9]*$').hasMatch(s))) {
+      throw const FormatException('Invalid --scan packages');
+    }
+    final surface = extractSurface(component, own(), scan: scan);
     write('--out-iface', surface.interface);
     write('--out-trim-iface', surface.trim);
     return surface.counts;

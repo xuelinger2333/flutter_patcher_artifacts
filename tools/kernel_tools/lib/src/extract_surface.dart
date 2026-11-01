@@ -139,6 +139,15 @@ class _Collector extends RecursiveVisitor {
     if (!identical(o, m)) _record(into, o, key(o));
   }
 
+  void _recordPrivate(Map<String, Map<String, Set<String>>> into, Member m) {
+    final lib = m.enclosingLibrary;
+    if (_isOwn(lib) || m.name.library != lib) return;
+    into
+        .putIfAbsent(lib.importUri.toString(), () => {})
+        .putIfAbsent(m.enclosingClass?.name ?? LibraryIndex.topLevel, () => {})
+        .add(_memberKey(m)!);
+  }
+
   void _record(
     Map<String, Map<String, Set<String>>> into,
     Member m,
@@ -467,12 +476,24 @@ class Surface {
   };
 }
 
-Surface extractSurface(Component component, Set<String> own) {
+/// [own] packages are the patch's: their libraries are walked and never
+/// recorded as targets. [scan] packages are walked too but stay host targets:
+/// a whole-tier patch carries them (so their references must be covered),
+/// while a lean patch keeps using the host's copies.
+Surface extractSurface(
+  Component component,
+  Set<String> own, {
+  Set<String> scan = const {},
+}) {
   final collector = _Collector(own)..indexConstDeclarations(component);
+  bool walk(Library lib) =>
+      collector._isOwn(lib) ||
+      (lib.importUri.scheme == 'package' &&
+          scan.contains(lib.importUri.pathSegments.first));
   var walked = 0;
   final barrels = <String>{};
   for (final lib in component.libraries) {
-    if (!collector._isOwn(lib)) continue;
+    if (!walk(lib)) continue;
     walked++;
     lib.accept(collector);
     for (final cls in lib.classes) {
@@ -503,6 +524,53 @@ Surface extractSurface(Component component, Set<String> own) {
 
       for (final sup in cls.supers) {
         inherit(sup.classNode);
+      }
+      // The validator checks every override pair in the application class's
+      // hierarchy, including host members overriding host members and host
+      // implementations of host interfaces (Route.isCurrent for
+      // PredictiveBackRoute.isCurrent through ModalRoute): every host member
+      // whose name is declared more than once in the hierarchy is listed.
+      // (_addMember and _recordPrivate skip the application's own members.)
+      // Own declarations count too (a mixin's showToolbar meeting the
+      // TextInputClient its user implements); only host members are listed.
+      final declarations = <String, List<Member>>{};
+      for (final c in {cls, ...inherited}) {
+        for (final m in c.members) {
+          if (!m.isInstanceMember || m is Constructor) continue;
+          final setter = m is Procedure && m.isSetter;
+          final key = '${m.name.isPrivate ? m.name.library!.importUri : ''}'
+              '#${m.name.text}#${setter ? 'set' : 'get'}';
+          declarations.putIfAbsent(key, () => []).add(m);
+          if (m is Field && m.hasSetter) {
+            declarations
+                .putIfAbsent(key.replaceFirst(RegExp(r'#get$'), '#set'), () => [])
+                .add(m);
+          }
+        }
+      }
+      // Implementing a host class overrides every member of it, private ones
+      // included (`implements ImageStreamCompleterHandle` and its _completer).
+      for (final type in cls.implementedTypes) {
+        final host = type.classNode;
+        if (collector._isOwn(host.enclosingLibrary)) continue;
+        for (final m in host.members) {
+          if (!m.isInstanceMember || m is Constructor) continue;
+          if (m.name.isPrivate) {
+            collector._recordPrivate(collector.canBeOverridden, m);
+          } else {
+            collector._addMember(collector.canBeOverridden, m);
+          }
+        }
+      }
+      for (final group in declarations.values) {
+        if (group.length < 2) continue;
+        for (final m in group) {
+          if (m.name.isPrivate) {
+            collector._recordPrivate(collector.canBeOverridden, m);
+          } else {
+            collector._addMember(collector.canBeOverridden, m);
+          }
+        }
       }
       for (final member in cls.members) {
         if (!member.isInstanceMember || member.name.isPrivate) continue;

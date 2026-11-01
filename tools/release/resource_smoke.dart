@@ -73,16 +73,9 @@ void main() {
     'class': 'UnmodifiableListView',
     'member': '_source',
   });
-  await File('${work.path}/lean.yaml').writeAsString(jsonEncode(iface));
-  await File('${work.path}/whole.yaml').writeAsString(
-    jsonEncode({
-      for (final s in iface.keys)
-        s: [
-          for (final row in iface[s]!)
-            if ((row['library'] as String).startsWith('dart:')) row,
-        ],
-    }),
-  );
+  // Both tiers validate against the host interface: whole only renames more
+  // (unpinned) packages into the module.
+  await File('${work.path}/host.yaml').writeAsString(jsonEncode(iface));
   final allocated = {
     'schema': 1,
     'classes': [
@@ -127,7 +120,7 @@ void main() {
       'platform':
           '$sdk/bin/cache/artifacts/engine/common/flutter_patched_sdk_product/platform_strong.dill',
       'baseline': '$baseline/app.dill',
-      'interface': '${work.path}/$tier.yaml',
+      'interface': '${work.path}/host.yaml',
       'compiler_interface': '${work.path}/compiler.json',
       'allocated': '${work.path}/allocated.json',
       'resources': true,
@@ -155,9 +148,7 @@ void main() {
     if (report['status'] != 'compiled')
       throw StateError('Not compiled: ${work.path}/$tier.log');
     final overlay = report['overlay'] as Map;
-    if (tier == 'lean'
-        ? overlay['wrapped'] != 2
-        : overlay['root_bundle_replaced'] != true) {
+    if (overlay['wrapped'] != 2) {
       throw StateError('Missing resource transform');
     }
     final points = {

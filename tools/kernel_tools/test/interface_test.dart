@@ -482,5 +482,36 @@ void main() {
     check(has('dynamically-callable', '_JsonMap', '[]'), 'dynamic selector');
     check(!has('dynamically-callable', 'Mock', '[]'), 'noSuchMethod excluded');
   });
+  test('scanned packages are walked but stay host targets', () {
+    final uri = Uri.parse('file:///fixture.dart');
+    final hostLib = library('package:flutter/widgets.dart');
+    final hostMember = method('build', isStatic: true);
+    hostLib.addProcedure(hostMember);
+    final freeLib = library('package:get/get.dart');
+    final freeMember = method('find', isStatic: true);
+    freeMember.function.body = ExpressionStatement(
+      StaticInvocation(hostMember, Arguments([])),
+    );
+    freeLib.addProcedure(freeMember);
+    final appLib = library('package:app/main.dart');
+    final main = method('main', isStatic: true);
+    main.function.body = ExpressionStatement(
+      StaticInvocation(freeMember, Arguments([])),
+    );
+    appLib.addProcedure(main);
+    final c = Component(libraries: [appLib, freeLib, hostLib]);
+    final rows = extractSurface(c, {'app'}, scan: {'get'})
+        .interface
+        .rows('callable');
+    check(
+      rows.any((r) => r['library'] == 'package:get/get.dart'),
+      'lean patches call the host copy of a free package',
+    );
+    check(
+      rows.any((r) => r['library'] == 'package:flutter/widgets.dart'),
+      'whole patches carry the free package, whose calls are covered',
+    );
+    check(uri.scheme == 'file', 'fixture');
+  });
   print('$cases interface structural cases passed');
 }

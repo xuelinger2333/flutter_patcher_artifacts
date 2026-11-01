@@ -29,9 +29,9 @@ Future<Map<String, Object?>> compilePatch(List<String> args) async {
   String value(String key) => req[key] as String;
   final tier = value('tier');
   if (!['lean', 'whole'].contains(tier)) throw FormatException('Invalid tier');
-  // The whole tier carries Flutter itself, whose platform-gated code (desktop
-  // windowing makes FFI calls) only folding Platform.isX for the target OS
-  // drops. Older CLIs send no target OS; their modules keep every branch.
+  // The tiers differ only in which packages the CLI renamed into the module
+  // (`own`): lean the application, whole also every package not pinned to
+  // the host. target_os is still validated for older CLIs that send it.
   final targetOS = req['target_os'] as String?;
   if (targetOS != null && !['android', 'ios'].contains(targetOS))
     throw FormatException('Invalid target_os');
@@ -55,7 +55,10 @@ Future<Map<String, Object?>> compilePatch(List<String> args) async {
         Directory(root).absolute.uri.toString(),
     ])
     ..additionalDillModules = [
-      if (tier == 'lean') File(value('baseline')).absolute.uri,
+      // Both tiers link the host: whole carries more packages, never Flutter
+      // or the packages pinned to the host (FFI, plugins, build hooks and
+      // everything they depend on).
+      File(value('baseline')).absolute.uri,
     ]
     ..environmentDefines = defines ?? const {}
     ..packagesFileUri = scheme == null
@@ -250,18 +253,15 @@ Future<Map<String, Object?>> compilePatch(List<String> args) async {
     );
     if (req['overlay_library'] is String &&
         diagnostics.isEmpty &&
-        (tier == 'whole' || resourceShape['verdict'] == 'INJECTABLE')) {
-      overlayTransform = tier == 'whole'
-          ? transformWholeOverlay(component, value('overlay_library'))
-          : transformOverlayComponent(
-              component,
-              (req['own'] as List).cast<String>().toSet(),
-              value('overlay_library'),
-              'patcherOverlayBundle',
-            );
-      if (tier == 'lean' &&
-          (overlayTransform['wrapped'] as int) !=
-              (resourceShape['injectionPoints'] as List).length) {
+        resourceShape['verdict'] == 'INJECTABLE') {
+      overlayTransform = transformOverlayComponent(
+        component,
+        (req['own'] as List).cast<String>().toSet(),
+        value('overlay_library'),
+        'patcherOverlayBundle',
+      );
+      if ((overlayTransform['wrapped'] as int) !=
+          (resourceShape['injectionPoints'] as List).length) {
         throw StateError('Overlay injection count differs from detection');
       }
     }
@@ -273,11 +273,11 @@ Future<Map<String, Object?>> compilePatch(List<String> args) async {
   for (final lib in module) {
     lib.accept(checker);
   }
-  // Icons the lean module shares the host's icon fonts with. The host ships
+  // Icons the module shares the host's icon fonts with. The host ships
   // them tree-shaken to these code points; a patch font replaces the host's
   // family, so it must keep them (or need not ship at all).
   final hostIcons = <String, Map<String, Object?>>{};
-  if (tier == 'lean') {
+  {
     final scan = AllocationCheck(<Library>{}, <String>{});
     for (final lib in loadedLibraries) {
       if (lib.importUri.scheme != 'dart') lib.accept(scan);
@@ -291,23 +291,17 @@ Future<Map<String, Object?>> compilePatch(List<String> args) async {
       hostIcons[jsonEncode(row)] = row;
     }
   }
-  final inherited = tier == 'whole'
-      ? <Map<String, Object?>>[]
-      : inheritedCheck(
-          component,
-          result.classHierarchy!,
-          loadedLibraries,
-          module,
-          await File(value('interface')).readAsString(),
-          await File(value('compiler_interface')).readAsString(),
-        );
-  // Whole-tier modules are checked after TFA, which drops unused dependency
-  // code that carries FFI.
+  final inherited = inheritedCheck(
+    component,
+    result.classHierarchy!,
+    loadedLibraries,
+    module,
+    await File(value('interface')).readAsString(),
+    await File(value('compiler_interface')).readAsString(),
+  );
   final ffi = FfiCheck();
-  if (tier == 'lean') {
-    for (final lib in module) {
-      lib.accept(ffi);
-    }
+  for (final lib in module) {
+    lib.accept(ffi);
   }
   final checks = <String, Object?>{
     'interface': diagnostics,
@@ -325,10 +319,9 @@ Future<Map<String, Object?>> compilePatch(List<String> args) async {
     'checks': checks,
     'fonts': checker.fonts,
     'dynamic_fonts': checker.dynamicFonts,
-    if (tier == 'lean')
-      'host_icons': [
-        for (final key in hostIcons.keys.toList()..sort()) hostIcons[key],
-      ],
+    'host_icons': [
+      for (final key in hostIcons.keys.toList()..sort()) hostIcons[key],
+    ],
     if (overlayTransform != null) 'overlay': overlayTransform,
     'module_libraries': module.map((l) => l.importUri.toString()).toList(),
     if (frameworkReuse != null) 'framework_reuse': frameworkReuse,
@@ -336,83 +329,14 @@ Future<Map<String, Object?>> compilePatch(List<String> args) async {
   if (req['kernel_out'] is String)
     await writeComponentToBinary(component, req['kernel_out'] as String);
   if (diagnostics.isNotEmpty ||
-      (tier == 'lean' &&
-          (checker.issues.isNotEmpty ||
-              inherited.isNotEmpty ||
-              ffi.issues.isNotEmpty))) {
+      checker.issues.isNotEmpty ||
+      inherited.isNotEmpty ||
+      ffi.issues.isNotEmpty) {
     return {'status': 'rejected', ...report};
   }
   checkEntry(module, req['seq'] as int, value('fingerprint'), tier);
-  if (tier == 'whole') {
-    // TFA must not trim the externally supplied platform. The generator looks
-    // up platform intrinsics (e.g. dart:developer.debugger) even when unused.
-    // These are analysis-only keep-alive roots, not additions to the validated
-    // host interface, and loaded libraries are never emitted in the module.
-    final core = result.coreTypes!;
-    void keep(Annotatable node) => node.addAnnotation(
-      ConstantExpression(
-        InstanceConstant(core.pragmaClass.reference, [], {
-          core.pragmaName.fieldReference: StringConstant('vm:entry-point'),
-          core.pragmaOptions.fieldReference: BoolConstant(true),
-        }),
-      ),
-    );
-    for (final lib in loadedLibraries) {
-      for (final member in lib.members) keep(member);
-      for (final cls in lib.classes) {
-        keep(cls);
-        for (final member in cls.members) keep(member);
-      }
-    }
-    await runGlobalTransformations(
-      options.target!,
-      component,
-      ErrorDetector(),
-      KernelCompilationArguments(
-        source: Uri.parse(value('entry')),
-        options: options,
-        requireMain: false,
-        includePlatform: false,
-        aot: true,
-        useGlobalTypeFlowAnalysis: true,
-        treeShakeWriteOnlyFields: false,
-        dynamicInterface: File(value('interface')).absolute.uri,
-        targetOS: targetOS,
-        environmentDefines: defines ?? const {},
-      ),
-    );
-    module
-      ..clear()
-      ..addAll(component.libraries.where((l) => !loadedLibraries.contains(l)));
-    checkEntry(module, req['seq'] as int, value('fingerprint'), tier);
-    final after = AllocationCheck(
-      loadedLibraries,
-      (allocationData['classes'] as List).cast<String>().toSet(),
-    );
-    for (final lib in module) lib.accept(after);
-    checks['allocation'] = after.issues;
-    final ffiAfter = FfiCheck();
-    for (final lib in module) lib.accept(ffiAfter);
-    checks['ffi'] = ffiAfter.issues;
-    report['fonts'] = after.fonts;
-    report['dynamic_fonts'] = after.dynamicFonts;
-    report['module_libraries'] = module
-        .map((l) => l.importUri.toString())
-        .toList();
-    if (frameworkReuse != null) report['framework_reuse'] = frameworkReuse;
-    // Without a target OS, Flutter's code for every platform stays in the
-    // module (3.47 desktop windowing makes FFI calls), so only CLIs that send
-    // one get the post-TFA FFI rejection; older ones keep their behavior.
-    if (after.issues.isNotEmpty ||
-        (targetOS != null && ffiAfter.issues.isNotEmpty))
-      return {
-        'status': 'rejected',
-        ...report,
-        'post_tfa_allocation': after.issues,
-      };
-  }
   if (!emit) return {'status': 'checked', ...report};
-  // Prefix all newly compiled libraries (including the whole-tier framework).
+  // Prefix all newly compiled libraries.
   // User/new dependency package names were remapped before resolution.
   final uriPrefix = 'package:patch.${req['seq']}.';
   for (final lib in module) {

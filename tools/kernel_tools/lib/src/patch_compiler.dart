@@ -185,9 +185,9 @@ Future<Map<String, Object?>> compilePatch(List<String> args) async {
   }..remove('call');
   diagnostics.removeWhere((d) {
     if (d['code'] != 'DynamicCallsAreNotAllowedInDynamicModule') return false;
-    final selector = RegExp(r"selector '([^']+)'")
-        .firstMatch(d['message'] as String)
-        ?.group(1);
+    final selector = RegExp(
+      r"selector '([^']+)'",
+    ).firstMatch(d['message'] as String)?.group(1);
     if (selector == null) return false;
     return !hostNames.contains(selector.replaceFirst(RegExp('^[gs]et:'), ''));
   });
@@ -304,8 +304,18 @@ Future<Map<String, Object?>> compilePatch(List<String> args) async {
       ffi.issues.isNotEmpty) {
     return {'status': 'rejected', ...report};
   }
-  checkEntry(module, req['seq'] as int, value('fingerprint'), tier);
+  final slots = checkEntry(
+    module,
+    req['seq'] as int,
+    value('fingerprint'),
+    tier,
+  );
+  // Background engines start and call back entry points by name; the
+  // patcher hook runs the patch's version from this table.
+  final entries = entryPoints(module, slots);
+  report['entries'] = entries.keys.toList()..sort();
   if (!emit) return {'status': 'checked', ...report};
+  installEntryTable(slots, entries, CoreTypes(component));
   // Prefix all newly compiled libraries.
   // User/new dependency package names were remapped before resolution.
   final uriPrefix = 'package:patch.${req['seq']}.';

@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:kernel/kernel.dart';
 import 'package:kernel/class_hierarchy.dart';
+import 'package:kernel/core_types.dart';
 import 'package:front_end/src/kernel/dynamic_module_validator.dart';
 
 import 'extract_surface.dart' show surfaceOrigin;
@@ -70,25 +71,29 @@ class FfiCheck extends RecursiveVisitor {
 
   @override
   void defaultMember(Member node) {
-    if (_isNativeBinding(node)) _report(node, 'Native binding ${node.name.text}');
+    if (_isNativeBinding(node))
+      _report(node, 'Native binding ${node.name.text}');
     super.defaultMember(node);
   }
 
   @override
   void visitStaticInvocation(StaticInvocation node) {
-    if (_isFfiCallSite(node.target)) _report(node, 'FFI call ${node.target.name.text}');
+    if (_isFfiCallSite(node.target))
+      _report(node, 'FFI call ${node.target.name.text}');
     super.visitStaticInvocation(node);
   }
 
   @override
   void visitStaticTearOff(StaticTearOff node) {
-    if (_isFfiCallSite(node.target)) _report(node, 'FFI call ${node.target.name.text}');
+    if (_isFfiCallSite(node.target))
+      _report(node, 'FFI call ${node.target.name.text}');
     super.visitStaticTearOff(node);
   }
 
   @override
   void visitConstructorInvocation(ConstructorInvocation node) {
-    if (_isFfiCallSite(node.target)) _report(node, 'FFI call ${node.target.name.text}');
+    if (_isFfiCallSite(node.target))
+      _report(node, 'FFI call ${node.target.name.text}');
     super.visitConstructorInvocation(node);
   }
 
@@ -271,21 +276,10 @@ List<Map<String, Object?>> inheritedCheck(
   return issues;
 }
 
-void checkEntry(
-  Iterable<Library> module,
-  int seq,
-  String fingerprint,
-  String tier,
-) {
-  final entries = module
-      .expand((l) => l.procedures)
-      .where((p) => p.name.text == 'dynamicModuleEntrypoint')
-      .toList();
-  if (entries.length != 1)
-    throw StateError('Exactly one module entry is required');
-  final entry = entries.single;
+/// The names of the `@pragma`s on [node].
+Set<String> pragmaNames(Annotatable node) {
   final pragmas = <String>{};
-  for (final a in entry.annotations) {
+  for (final a in node.annotations) {
     if (a is ConstantExpression && a.constant is InstanceConstant) {
       final c = a.constant as InstanceConstant;
       if (c.classNode.name == 'pragma' &&
@@ -298,7 +292,26 @@ void checkEntry(
       }
     }
   }
-  if (!pragmas.containsAll(['vm:entry-point', 'dyn-module:entry-point']))
+  return pragmas;
+}
+
+/// Checks the module's PatchEntry and returns its six slots.
+List<Expression> checkEntry(
+  Iterable<Library> module,
+  int seq,
+  String fingerprint,
+  String tier,
+) {
+  final entries = module
+      .expand((l) => l.procedures)
+      .where((p) => p.name.text == 'dynamicModuleEntrypoint')
+      .toList();
+  if (entries.length != 1)
+    throw StateError('Exactly one module entry is required');
+  final entry = entries.single;
+  if (!pragmaNames(
+    entry,
+  ).containsAll(['vm:entry-point', 'dyn-module:entry-point']))
     throw StateError('Both entry pragmas required');
   final originalBody = entry.function.body;
   final body = originalBody is Block && originalBody.statements.length == 1
@@ -330,4 +343,82 @@ void checkEntry(
       literal(values[2]) != fingerprint ||
       literal(values[3]) != tier)
     throw StateError('Entry identity differs');
+  return values;
+}
+
+/// The key the engine's patcher hook asks for: the host's declaration,
+/// `library#name` or `library#Class.name`. A module names its libraries
+/// package:patch.<seq>.<package>/..., the host package:<package>/....
+String entryKey(Procedure procedure) {
+  final library = '${procedure.enclosingLibrary.importUri}'.replaceFirst(
+    RegExp(r'^package:patch\.\d+\.'),
+    'package:',
+  );
+  final owner = procedure.enclosingClass;
+  return '$library#${owner == null ? '' : '${owner.name}.'}${procedure.name.text}';
+}
+
+/// The module's entry points by [entryKey]: its static methods marked
+/// `@pragma('vm:entry-point')` (what an engine may start or call back by
+/// name), and the module's main, the PatchEntry's [slots] 4.
+Map<String, Procedure> entryPoints(
+  Iterable<Library> module,
+  List<Expression> slots,
+) {
+  final found = <String, Procedure>{};
+  void add(Procedure p) {
+    if (p.isStatic &&
+        p.kind == ProcedureKind.Method &&
+        !p.isAbstract &&
+        !p.isExternal &&
+        p.name.text != 'dynamicModuleEntrypoint' &&
+        pragmaNames(p).contains('vm:entry-point'))
+      found[entryKey(p)] = p;
+  }
+
+  for (final library in module) {
+    library.procedures.forEach(add);
+    for (final cls in library.classes) {
+      cls.procedures.forEach(add);
+    }
+  }
+  final main = switch (slots[4]) {
+    StaticTearOff e => e.target,
+    ConstantExpression(constant: StaticTearOffConstant c) => c.target,
+    _ => throw StateError('PatchEntry main is not a tear-off'),
+  };
+  found[entryKey(main)] = main;
+  return found;
+}
+
+/// Replaces the PatchEntry's empty table ([slots] 5) with [entries]: the
+/// patch's version of each entry point, by key. A constant, as the CFE
+/// emits tear-offs; the bytecode generator takes no other form.
+void installEntryTable(
+  List<Expression> slots,
+  Map<String, Procedure> entries,
+  CoreTypes core,
+) {
+  final table = slots[5];
+  if (!(table is NullLiteral ||
+      table is ConstantExpression && table.constant is NullConstant))
+    throw StateError('PatchEntry table is not empty');
+  final keys = entries.keys.toList()..sort();
+  final keyType = core.stringNonNullableRawType;
+  final valueType = core.functionNonNullableRawType;
+  table.replaceWith(
+    ConstantExpression(
+      MapConstant(keyType, valueType, [
+        for (final key in keys)
+          ConstantMapEntry(
+            StringConstant(key),
+            StaticTearOffConstant(entries[key]!),
+          ),
+      ]),
+      InterfaceType(core.mapClass, Nullability.nonNullable, [
+        keyType,
+        valueType,
+      ]),
+    ),
+  );
 }

@@ -1,0 +1,157 @@
+diff --git a/engine/src/flutter/lib/ui/plugins/callback_cache.cc b/engine/src/flutter/lib/ui/plugins/callback_cache.cc
+index 71c4bc3..96203a5 100644
+--- a/engine/src/flutter/lib/ui/plugins/callback_cache.cc
++++ b/engine/src/flutter/lib/ui/plugins/callback_cache.cc
+@@ -37,13 +37,18 @@ void DartCallbackCache::SetCachePath(const std::string& path) {
+ }
+ 
+ Dart_Handle DartCallbackCache::GetCallback(int64_t handle) {
+-  std::scoped_lock lock(mutex_);
+-  auto iterator = cache_.find(handle);
+-  if (iterator != cache_.end()) {
+-    DartCallbackRepresentation cb = iterator->second;
+-    return LookupDartClosure(cb.name, cb.class_name, cb.library_path);
++  DartCallbackRepresentation cb;
++  {
++    std::scoped_lock lock(mutex_);
++    auto iterator = cache_.find(handle);
++    if (iterator == cache_.end()) {
++      return Dart_Null();
++    }
++    cb = iterator->second;
+   }
+-  return Dart_Null();
++  // The patcher hook runs Dart, which may register callbacks: not under
++  // mutex_.
++  return LookupPatchedClosure(cb.name, cb.class_name, cb.library_path, false);
+ }
+ 
+ int64_t DartCallbackCache::GetCallbackHandle(const std::string& name,
+@@ -192,4 +197,77 @@ Dart_Handle DartCallbackCache::LookupDartClosure(
+   return closure;
+ }
+ 
++namespace {
++
++// A patch module names its libraries package:patch.<seq>.<package>/...; the
++// host's own library is package:<package>/....
++std::string PatcherHostLibrary(const std::string& library) {
++  static const std::string kPrefix = "package:patch.";
++  if (library.compare(0, kPrefix.size(), kPrefix) != 0) {
++    return library;
++  }
++  size_t end = kPrefix.size();
++  while (end < library.size() && library[end] >= '0' && library[end] <= '9') {
++    end++;
++  }
++  if (end == kPrefix.size() || end + 1 >= library.size() ||
++      library[end] != '.') {
++    return library;
++  }
++  return "package:" + library.substr(end + 1);
++}
++
++// A top-level declaration of the root library, or null when it has none.
++Dart_Handle PatcherRootField(const char* name) {
++  Dart_Handle root = Dart_RootLibrary();
++  if (Dart_IsError(root) || Dart_IsNull(root)) {
++    return Dart_Null();
++  }
++  Dart_Handle value = Dart_GetField(root, ToDart(name));
++  return Dart_IsError(value) ? Dart_Null() : value;
++}
++
++bool IsFound(Dart_Handle handle) {
++  return !Dart_IsError(handle) && !Dart_IsNull(handle);
++}
++
++}  // namespace
++
++Dart_Handle DartCallbackCache::LookupPatchedClosure(
++    const std::string& name,
++    const std::string& class_name,
++    const std::string& library_path,
++    bool start) {
++  Dart_Handle found = LookupDartClosure(name, class_name, library_path);
++  Dart_Handle hook = PatcherRootField("flutterPatcherEntry");
++  if (!Dart_IsClosure(hook)) {
++    return found;
++  }
++  // Keys name the host's declaration: a callback registered by patched code
++  // names its module library, which another isolate may not have loaded.
++  std::string library = PatcherHostLibrary(library_path);
++  if (library.empty()) {
++    // The root library is the generated bootstrap; the app's own entry
++    // library declares the app's entry points.
++    Dart_Handle app = PatcherRootField("flutterPatcherAppLibrary");
++    if (Dart_IsString(app)) {
++      library = tonic::StdStringFromDart(app);
++    }
++  }
++  if (!IsFound(found) && !library.empty() && library != library_path) {
++    found = LookupDartClosure(name, class_name, library);
++  }
++  std::string key =
++      library + "#" + (class_name.empty() ? name : class_name + "." + name);
++  Dart_Handle args[] = {ToDart(key), IsFound(found) ? found : Dart_Null(),
++                        ToDart(start)};
++  Dart_Handle chosen = Dart_InvokeClosure(hook, 3, args);
++  if (Dart_IsError(chosen)) {
++    FML_LOG(ERROR) << "flutterPatcherEntry failed for " << key << ": "
++                   << Dart_GetError(chosen);
++    return found;
++  }
++  return Dart_IsNull(chosen) ? found : chosen;
++}
++
+ }  // namespace flutter
+diff --git a/engine/src/flutter/lib/ui/plugins/callback_cache.h b/engine/src/flutter/lib/ui/plugins/callback_cache.h
+index e9c47fd..5685ef5 100644
+--- a/engine/src/flutter/lib/ui/plugins/callback_cache.h
++++ b/engine/src/flutter/lib/ui/plugins/callback_cache.h
+@@ -37,6 +37,14 @@ class DartCallbackCache {
+ 
+   static void LoadCacheFromDisk();
+ 
++  // flutter_patcher: looks up [name] like a callback, then lets the root
++  // library's flutterPatcherEntry, when it declares one, choose the function
++  // to run. [start] is true when the function starts the isolate.
++  static Dart_Handle LookupPatchedClosure(const std::string& name,
++                                          const std::string& class_name,
++                                          const std::string& library_path,
++                                          bool start);
++
+  private:
+   static Dart_Handle LookupDartClosure(const std::string& name,
+                                        const std::string& class_name,
+diff --git a/engine/src/flutter/runtime/dart_isolate.cc b/engine/src/flutter/runtime/dart_isolate.cc
+index 8ea56ae..cb0b9b4 100644
+--- a/engine/src/flutter/runtime/dart_isolate.cc
++++ b/engine/src/flutter/runtime/dart_isolate.cc
+@@ -13,6 +13,7 @@
+ #include "flutter/lib/io/dart_io.h"
+ #include "flutter/lib/ui/dart_runtime_hooks.h"
+ #include "flutter/lib/ui/dart_ui.h"
++#include "flutter/lib/ui/plugins/callback_cache.h"
+ #include "flutter/runtime/dart_isolate_group_data.h"
+ #include "flutter/runtime/dart_plugin_registrant.h"
+ #include "flutter/runtime/dart_service_isolate.h"
+@@ -931,8 +932,17 @@ bool DartIsolate::RunFromLibrary(std::optional<std::string> library_name,
+     InvokeDartPluginRegistrantIfAvailable(library_handle);
+   }
+ 
++  // flutter_patcher: every entry point but the root library's main, which
++  // the generated bootstrap is, may run a patch's version.
++  const std::string library_path = library_name.value_or("");
++  const std::string entrypoint_name =
++      entrypoint.has_value() && !entrypoint.value().empty() ? entrypoint.value()
++                                                            : "main";
+   auto user_entrypoint_function =
+-      ::Dart_GetField(library_handle, entrypoint_handle);
++      library_path.empty() && entrypoint_name == "main"
++          ? ::Dart_GetField(library_handle, entrypoint_handle)
++          : DartCallbackCache::LookupPatchedClosure(entrypoint_name, "",
++                                                    library_path, true);
+ 
+   auto entrypoint_args = tonic::ToDart(args);
+ 

@@ -181,6 +181,7 @@ def build(args):
     run(dart, f'--packages={config}', package / 'test/interface_test.dart', cwd=package)
     run(dart, f'--packages={config}', package / 'test/build_inspection_test.dart', cwd=package)
     run(dart, f'--packages={config}', package / 'test/patch_checks_test.dart', cwd=package)
+    run(dart, f'--packages={config}', package / 'test/entry_table_test.dart', cwd=package)
     run(dart, f'--packages={config}', package / 'test/ffi_check_test.dart', cwd=package)
     run(dart, f'--packages={config}', package / 'test/framework_partition_test.dart', cwd=package)
     run(hosts.flutter_launcher(HOST, flutter), '--suppress-analytics', 'precache', '--android')

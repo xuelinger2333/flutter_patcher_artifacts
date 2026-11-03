@@ -13,7 +13,7 @@ from urllib.error import HTTPError
 from urllib.parse import quote
 from urllib.request import Request, urlopen
 
-from artifacts import InvalidArtifact, read_json, require, validate, write_json
+from artifacts import InvalidArtifact, read_json, require, validate, validate_ios, write_json
 
 
 class GitHub:
@@ -68,9 +68,21 @@ def existing_release(github, version):
 
 def publish(github, directory):
     directory = Path(directory)
-    manifest = validate(directory, publishable=True)
+    upload(github, directory, validate(directory, publishable=True), 'engine.manifest.json')
+
+
+def publish_ios(github, directory):
+    """Uploads an iOS engine built on a Mac; the CLI accepts it only once verified."""
+    directory = Path(directory)
+    manifest = validate_ios(directory)
+    require(manifest['verify']['snapshot'] == 'passed' and manifest['verify']['device'] != 'pending',
+            'iOS engine verification did not pass')
+    upload(github, directory, manifest, 'engine-ios.manifest.json')
+
+
+def upload(github, directory, manifest, manifest_name):
     release = existing_release(github, manifest['flutter_version'])
-    names = [record['name'] for record in manifest['files']] + ['engine.manifest.json']
+    names = [record['name'] for record in manifest['files']] + [manifest_name]
     existing = {asset['name'] for asset in release.get('assets', [])}
     require(not existing.intersection(names), 'Engine assets already exist; user review is required before replacement')
     for name in names:
@@ -124,6 +136,7 @@ def main():
     commands = parser.add_subparsers(dest='command', required=True)
     release = commands.add_parser('publish')
     release.add_argument('directory')
+    commands.add_parser('publish-ios').add_argument('directory')
     stable = commands.add_parser('check-stable')
     stable.add_argument('--supported', default='supported_versions.txt')
     stable.add_argument('--releases-json')
@@ -132,6 +145,8 @@ def main():
         github = GitHub(args.repository or '', os.environ.get('GITHUB_TOKEN'))
         if args.command == 'publish':
             publish(github, args.directory)
+        elif args.command == 'publish-ios':
+            publish_ios(github, args.directory)
         else:
             if args.releases_json:
                 document = read_json(args.releases_json)

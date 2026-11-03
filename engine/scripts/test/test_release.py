@@ -61,6 +61,33 @@ class ReleaseTests(unittest.TestCase):
             self.assertEqual(sum(method == 'POST' for method, _ in calls), 4)
             self.assertTrue(all(method == 'GET' or '/assets?' in path for method, path in calls))
 
+    def test_ios_uploads_only_a_verified_engine(self):
+        from unittest.mock import patch
+        import hashlib
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            filenames = ['Flutter.xcframework.zip', 'gen_snapshot_ios-darwin-arm64', 'engine-ios.manifest.json']
+            for name in filenames:
+                (root / name).write_bytes(b'fixture')
+            uploads = []
+            class API:
+                def request(self, method, path, body=None, upload=None):
+                    if method == 'GET':
+                        return [{'id': 7, 'tag_name': 'flutter-3.47.2', 'assets': [], 'html_url': 'review'}]
+                    uploads.append(path)
+                    data = Path(upload).read_bytes()
+                    return {'state': 'uploaded', 'size': len(data), 'digest': 'sha256:' + hashlib.sha256(data).hexdigest()}
+            manifest = {'flutter_version': '3.47.2', 'files': [{'name': n} for n in filenames[:-1]],
+                        'verify': {'snapshot': 'pending', 'device': 'pending'}}
+            with patch.object(github_release, 'validate_ios', return_value=manifest):
+                with self.assertRaises(github_release.InvalidArtifact):
+                    github_release.publish_ios(API(), root)
+                self.assertEqual(uploads, [])
+                manifest['verify'] = {'snapshot': 'passed', 'device': 'skipped'}
+                github_release.publish_ios(API(), root)
+            self.assertEqual(len(uploads), 3)
+            self.assertIn('name=engine-ios.manifest.json', uploads[-1])
+
     def test_select_stable_by_revision_not_list_order(self):
         document = {'current_release': {'stable': 'a'}, 'releases': [
             {'hash': 'b', 'version': '9.0.0', 'channel': 'beta'},

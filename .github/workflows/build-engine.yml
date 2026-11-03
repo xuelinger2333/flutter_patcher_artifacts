@@ -106,8 +106,9 @@ jobs:
             labels: [self-hosted, Windows, X64, engine-builder]
     runs-on: ${{ matrix.host.labels }}
     timeout-minutes: 360
+    # Each secondary runner sets FLUTTER_PATCHER_ENGINE_HOME in its own .env
+    # (install_runner.ps1); ENGINE_WORK_DIR is the primary host's path.
     env:
-      FLUTTER_PATCHER_ENGINE_HOME: ${{ vars.ENGINE_WORK_DIR }}
       FLUTTER_VERSION: ${{ matrix.flutter_version }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4

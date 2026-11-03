@@ -67,4 +67,11 @@ $token = $token.Trim()
     --name $RunnerName --labels engine-builder --work _work --disableupdate
 if ($LASTEXITCODE -ne 0) { Fail 'runner configuration failed' }
 Remove-Variable token
-Write-Host "Runner configured in $runner. Start it with .\run.cmd, or re-run config.cmd with --runasservice from an elevated prompt; the job reads FLUTTER_PATCHER_ENGINE_HOME from the repository variable ENGINE_WORK_DIR (set it to $home_dir)."
+# Jobs run with this shell's PATH (Git, Python, bash), proxy and engine home.
+$environment = @("FLUTTER_PATCHER_ENGINE_HOME=$home_dir", "PATH=$env:PATH")
+foreach ($name in @('HTTP_PROXY', 'HTTPS_PROXY', 'NO_PROXY')) {
+    $value = [Environment]::GetEnvironmentVariable($name)
+    if ($value) { $environment += "$name=$value" }
+}
+Set-Content -Path (Join-Path $runner '.env') -Value $environment -Encoding ascii
+Write-Host "Runner configured in $runner. Start it with .\run.cmd, or re-run config.cmd with --runasservice from an elevated prompt."

@@ -1,0 +1,26 @@
+{
+  "flutter": {
+    "3.47.2": {
+      "current": {
+        "engine": "engine-3.47.2-c58d1a3d",
+        "engine-ios": "engine-ios-3.47.2-1cf8fca2",
+        "tools": "tools-3.47.2-85373eb2"
+      },
+      "releases": {
+        "engine-3.47.2-c58d1a3d": {
+          "kind": "engine",
+          "manifest_sha256": "46dadd5ccb51797d2a4571c69eaf918dea5de4f8e5d669299f05e39c728cad50"
+        },
+        "engine-ios-3.47.2-1cf8fca2": {
+          "kind": "engine-ios",
+          "manifest_sha256": "ae6e4f50ce953c56072d4d67dd7dbb6aa795d400652dd898cb2404d4edad63c7"
+        },
+        "tools-3.47.2-85373eb2": {
+          "kind": "tools",
+          "manifest_sha256": "e68190206e390e7f9065ed6471f4360fadc0ff10da03c1cad2c07bd1efa81929"
+        }
+      }
+    }
+  },
+  "schema": 1
+}

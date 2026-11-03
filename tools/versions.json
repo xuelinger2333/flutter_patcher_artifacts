@@ -1,7 +1,52 @@
 {
+  "3.47.0": {
+    "dart_version": "3.13.0",
+    "dart_commit": "da6595cd6bb5d4c0a185d759a025e879ff06e631",
+    "engine_commit": "5f77625673248ee5846fbcaf5d3e1a3878386fd7"
+  },
+  "3.47.1": {
+    "dart_version": "3.13.1",
+    "dart_commit": "852b3e3608906afbe6102573cfd4407aeedd1b78",
+    "engine_commit": "5d531788691ec3404cac0cee66ead4007b177363"
+  },
   "3.47.2": {
     "dart_version": "3.13.2",
     "dart_commit": "60a57cd42d64dc03e9f07aa60a2e250755c1ef28",
     "engine_commit": "a804b261645ef8c13eb3d5c44a5c2fb0340c5539"
+  },
+  "3.47.3": {
+    "dart_version": "3.13.3",
+    "dart_commit": "1d1a730ef918d602aedafc939a4cf5940e7589ab",
+    "engine_commit": "06a2e2a110089dff50fe635cffd2a61e1b24fbcd"
+  },
+  "3.47.4": {
+    "dart_version": "3.13.3",
+    "dart_commit": "1d1a730ef918d602aedafc939a4cf5940e7589ab",
+    "engine_commit": "06a2e2a110089dff50fe635cffd2a61e1b24fbcd"
+  },
+  "3.47.5": {
+    "dart_version": "3.13.4",
+    "dart_commit": "b530c21f7de367b94fb04787bfed9d8e989d75e8",
+    "engine_commit": "af7e796e161ae0bb1ff0758c71a7105418bd9ded"
+  },
+  "3.47.6": {
+    "dart_version": "3.13.5",
+    "dart_commit": "04bcd1036cdc799ac6564988f159ee454d42c822",
+    "engine_commit": "692136cb6582dbfc5af3fb33c2515a069f2f66d0"
+  },
+  "3.47.7": {
+    "dart_version": "3.13.5",
+    "dart_commit": "04bcd1036cdc799ac6564988f159ee454d42c822",
+    "engine_commit": "deb287481e3ce9468f3434937ced4240a70539ca"
+  },
+  "3.47.8": {
+    "dart_version": "3.13.7",
+    "dart_commit": "416e33b0ffaef062a60ec966bb8c82ed2b83f128",
+    "engine_commit": "cf636b1dfb818dd6a3ff16e390e93b1a036969c8"
+  },
+  "3.47.9": {
+    "dart_version": "3.13.7",
+    "dart_commit": "416e33b0ffaef062a60ec966bb8c82ed2b83f128",
+    "engine_commit": "89c39edfdfae2949f6806e4a315c0c08522238b7"
   }
 }

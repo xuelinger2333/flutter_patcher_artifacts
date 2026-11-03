@@ -19,7 +19,7 @@ on:
         required: true
         type: string
       publish:
-        description: Upload to a Flutter release already created by the user
+        description: Publish as a new draft release for review (never changes an existing one)
         type: boolean
         default: false
       abi:
@@ -177,7 +177,7 @@ jobs:
         with:
           name: ${{ steps.pick.outputs.name }}
           path: ${{ runner.temp }}/release
-      - name: Upload to existing Flutter release
+      - name: Publish a new draft release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: python3 engine/scripts/github_release.py publish "$RUNNER_TEMP/release"
+        run: python3 engine/scripts/github_release.py publish engine "$RUNNER_TEMP/release"

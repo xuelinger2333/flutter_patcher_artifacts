@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Publish immutable engine releases or report newly unsupported stable versions."""
+"""Publish immutable artifact releases or report newly unsupported stable versions.
+
+Every build is published once, under its own tag, as a draft for the
+maintainer to review and publish; index.py then lists it. A release is never
+changed afterwards: hosts built with it keep patching against it.
+"""
 
 import argparse
 import hashlib
@@ -15,21 +20,24 @@ from urllib.request import Request, urlopen
 
 from artifacts import InvalidArtifact, read_json, require, validate, validate_ios, write_json
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'tools' / 'release'))
+import tools_artifacts  # noqa: E402
+
 
 class GitHub:
     def __init__(self, repository, token):
         require(re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', repository),
                 'invalid GitHub repository')
-        require(bool(token), 'GITHUB_TOKEN is required')
         self.repository = repository
-        self.token = token
+        self.token = token  # reads of published releases need none
 
     def request(self, method, path, body=None, missing_ok=False, upload=None):
         root = 'https://uploads.github.com' if upload is not None else 'https://api.github.com'
         url = f'{root}/repos/{self.repository}/{path}'
-        headers = {'Authorization': f'Bearer {self.token}',
-                   'Accept': 'application/vnd.github+json',
+        headers = {'Accept': 'application/vnd.github+json',
                    'X-GitHub-Api-Version': '2022-11-28', 'User-Agent': 'flutter-patcher-engine'}
+        if self.token:
+            headers['Authorization'] = f'Bearer {self.token}'
         data = None
         if upload is not None:
             data = Path(upload).read_bytes()
@@ -52,39 +60,53 @@ class GitHub:
         return release is not None or ref is not None
 
 
-def existing_release(github, version):
-    tag = f'flutter-{version}'
-    page = 1
-    while True:
-        releases = github.request('GET', f'releases?per_page=100&page={page}')
-        matches = [release for release in releases if release.get('tag_name') == tag]
-        require(len(matches) <= 1, f'Ambiguous release: {tag}')
-        if matches:
-            return matches[0]
-        if len(releases) < 100:
-            raise InvalidArtifact(f'Release {tag} does not exist; ask the user to create it manually first')
-        page += 1
-
-
-def publish(github, directory):
-    directory = Path(directory)
-    upload(github, directory, validate(directory, publishable=True), 'engine.manifest.json')
-
-
-def publish_ios(github, directory):
-    """Uploads an iOS engine built on a Mac; the CLI accepts it only once verified."""
-    directory = Path(directory)
+def verified_ios(directory):
+    """An iOS engine built on a Mac; the CLI accepts it only once verified."""
     manifest = validate_ios(directory)
     require(manifest['verify']['snapshot'] == 'passed' and manifest['verify']['device'] != 'pending',
             'iOS engine verification did not pass')
-    upload(github, directory, manifest, 'engine-ios.manifest.json')
+    return manifest
 
 
-def upload(github, directory, manifest, manifest_name):
-    release = existing_release(github, manifest['flutter_version'])
+# Release kind: validation of a publishable directory, and its manifest file.
+KINDS = {
+    'engine': (lambda directory: validate(directory, publishable=True), 'engine.manifest.json'),
+    'engine-ios': (verified_ios, 'engine-ios.manifest.json'),
+    'tools': (tools_artifacts.validate, 'tools.manifest.json'),
+}
+
+
+def release_tag(kind, manifest):
+    """`<kind>-<flutter>-<id>`: an engine's build_id, or the reproducible tools
+    snapshot's digest, so one build always maps to one tag."""
+    identity = manifest['files'][0]['sha256'] if kind == 'tools' else manifest['build_id'].replace('-', '')
+    return f'{kind}-{manifest["flutter_version"]}-{identity[:8]}'
+
+
+def find_release(github, tag):
+    """The release (draft or published) or tag named `tag`, if any."""
+    page = 1
+    while True:
+        releases = github.request('GET', f'releases?per_page=100&page={page}')
+        if any(release.get('tag_name') == tag for release in releases):
+            return True
+        if len(releases) < 100:
+            return github.exists(tag)
+        page += 1
+
+
+def publish(github, kind, directory):
+    require(bool(github.token), 'GITHUB_TOKEN is required')
+    check, manifest_name = KINDS[kind]
+    directory = Path(directory)
+    manifest = check(directory)
+    tag = release_tag(kind, manifest)
+    require(not find_release(github, tag), f'{tag} already exists; a release is never changed')
+    release = github.request('POST', 'releases', {
+        'tag_name': tag, 'target_commitish': manifest['builder_repo_commit'], 'name': tag, 'draft': True,
+        'body': f'Flutter {manifest["flutter_version"]} {kind}, built from {manifest["builder_repo_commit"]}. '
+                'Review the assets, publish this draft, then list it with engine/scripts/index.py.'})
     names = [record['name'] for record in manifest['files']] + [manifest_name]
-    existing = {asset['name'] for asset in release.get('assets', [])}
-    require(not existing.intersection(names), 'Engine assets already exist; user review is required before replacement')
     for name in names:
         path = directory / name
         uploaded = github.request('POST', f'releases/{release["id"]}/assets?name={quote(name)}', upload=path)
@@ -135,8 +157,8 @@ def main():
     parser.add_argument('--repository', default=os.environ.get('GITHUB_REPOSITORY'))
     commands = parser.add_subparsers(dest='command', required=True)
     release = commands.add_parser('publish')
+    release.add_argument('kind', choices=sorted(KINDS))
     release.add_argument('directory')
-    commands.add_parser('publish-ios').add_argument('directory')
     stable = commands.add_parser('check-stable')
     stable.add_argument('--supported', default='supported_versions.txt')
     stable.add_argument('--releases-json')
@@ -144,9 +166,7 @@ def main():
     try:
         github = GitHub(args.repository or '', os.environ.get('GITHUB_TOKEN'))
         if args.command == 'publish':
-            publish(github, args.directory)
-        elif args.command == 'publish-ios':
-            publish_ios(github, args.directory)
+            publish(github, args.kind, args.directory)
         else:
             if args.releases_json:
                 document = read_json(args.releases_json)

@@ -140,6 +140,26 @@ def check_toolchain(value):
             isinstance(k, str) and isinstance(v, str) for k, v in value.items()), 'invalid toolchain record')
 
 
+CAPABILITIES = Path(__file__).resolve().parents[2] / 'engine_patches' / 'capabilities.json'
+
+
+def capabilities(patches):
+    """The engine API generation, and what an engine built with `patches`
+    offers the plugin (engine_patches/capabilities.json)."""
+    table = read_json(CAPABILITIES)
+    files = {patch['file'] for patch in patches}
+    return {'engine_api': table['engine_api'],
+            'capabilities': sorted(name for file, name in table['patches'].items() if file in files)}
+
+
+def check_capabilities(manifest):
+    require(type(manifest.get('engine_api')) is int and manifest['engine_api'] >= 1, 'invalid engine_api')
+    names = manifest.get('capabilities')
+    require(isinstance(names, list) and all(isinstance(name, str) and re.fullmatch(r'[a-z_]+', name)
+                                            for name in names) and names == sorted(set(names)),
+            'invalid capabilities')
+
+
 def check_snapshot_record(directory, record, schema, seen_hosts):
     host = host_of(record)
     require(host in hosts.SUPPORTED, f'unsupported gen_snapshot host: {host}')
@@ -207,6 +227,7 @@ def validate(directory, publishable=False):
             'build_id must be a canonical UUID v4')
     timestamp(manifest.get('built_at'))
     check_patches(manifest.get('patches'))
+    check_capabilities(manifest)
     files = manifest.get('files')
     require(isinstance(files, list), 'invalid files')
     if schema == 1:
@@ -266,7 +287,7 @@ def package(build_dir, identity_path, directory):
         'flutter_version', 'engine_commit', 'engine_stamp', 'build_id', 'built_at',
         'builder_repo_commit', 'depot_tools_rev', 'patches')}
     pending = {'snapshot': 'pending', 'device': 'pending', 'device_reason': None}
-    manifest.update(schema=2, files=[], verify=dict(pending))
+    manifest.update(schema=2, files=[], verify=dict(pending), **capabilities(manifest['patches']))
     engine_jar = directory / 'libflutter-arm64_v8a-release.jar'
     member = 'lib/arm64-v8a/libflutter.so'
     info = zipfile.ZipInfo(member, (1980, 1, 1, 0, 0, 0))
@@ -407,6 +428,7 @@ def package_ios(framework, stock, gen_snapshot, identity, verify, directory):
         'schema': 1,
         **{key: identity[key] for key in ('flutter_version', 'engine_commit', 'builder_repo_commit',
                                            'depot_tools_rev', 'patches', 'toolchain')},
+        **capabilities(identity['patches']),
         'build_id': str(uuid.uuid4()),
         'built_at': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
         'verify': verify,
@@ -435,6 +457,7 @@ def validate_ios(directory):
             'build_id must be a canonical UUID v4')
     timestamp(manifest.get('built_at'))
     check_patches(manifest.get('patches'))
+    check_capabilities(manifest)
     check_toolchain(manifest.get('toolchain'))
     verify = manifest.get('verify')
     require(isinstance(verify, dict) and verify.get('snapshot') in ('pending', 'passed')

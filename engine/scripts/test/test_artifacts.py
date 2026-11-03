@@ -150,6 +150,18 @@ class ArtifactTests(unittest.TestCase):
         self.reject(lambda m: m.update(verify={
             'snapshot': 'passed', 'device': 'skipped', 'device_reason': 'test_failed'}))
 
+    def test_capabilities_follow_the_engine_patches(self):
+        self.assertEqual((self.manifest['engine_api'], self.manifest['capabilities']), (1, []))
+        patches = [{'file': name, 'sha256': 'e' * 64} for name in (
+            '0001-dyn-module-factory-allocate-finalize.patch', '0001-patcher-asset-channel.patch',
+            '0002-patcher-entry-hook.patch')]
+        self.assertEqual(artifacts.capabilities(patches),
+                         {'engine_api': 1, 'capabilities': ['asset_overlay', 'isolate_entry']})
+        for bad in ({'engine_api': 0}, {'engine_api': True}, {'capabilities': ['b', 'a']},
+                    {'capabilities': ['Asset']}, {'capabilities': 'asset_overlay'}):
+            with self.subTest(bad=bad):
+                self.reject(lambda m: m.update(bad))
+
     def test_unchanged_outputs_required_for_package(self):
         (self.build / 'lib.stripped/libflutter.so').write_bytes(elf(62))
         with self.assertRaisesRegex(ValueError, 'outputs changed'):

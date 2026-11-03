@@ -1,0 +1,7 @@
+{
+  "engine_api": 1,
+  "patches": {
+    "0001-patcher-asset-channel.patch": "asset_overlay",
+    "0002-patcher-entry-hook.patch": "isolate_entry"
+  }
+}

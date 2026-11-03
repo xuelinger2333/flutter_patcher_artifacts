@@ -7,7 +7,6 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from tools_artifacts import create, validate, compare, names, write_json
-from publish_tools import existing_release, publish
 from select_versions import select
 
 
@@ -85,56 +84,6 @@ class ArtifactsTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             create(self.first, self.version, self.metadata, 'b' * 40, 'c' * 40, [])
 
-    def test_uploads_only_tools_assets_to_existing_draft(self):
-        calls = []
-        class API:
-            def request(self, method, path, body=None, binary=False):
-                calls.append((method, path))
-                if method == 'GET':
-                    return [{'id': 1, 'tag_name': 'flutter-3.47.2', 'draft': True,
-                             'assets': [{'name': 'engine.manifest.json'}],
-                             'upload_url': 'https://uploads.github.com/assets{?name}', 'html_url': 'review'}]
-                if binary:
-                    import hashlib
-                    from urllib.parse import parse_qs, urlparse
-                    name = parse_qs(urlparse(path).query)['name'][0]
-                    return {'name': name, 'size': len(body), 'digest': 'sha256:' + hashlib.sha256(body).hexdigest()}
-                raise AssertionError('Attempted release/tag mutation')
-        publish(self.first, API())
-        self.assertEqual(sum('uploads.github.com' in path for _, path in calls), 2)
-        self.assertFalse(any(method in ('PATCH', 'DELETE') for method, _ in calls))
-
-    def test_missing_release_fails_without_writes(self):
-        class API:
-            def request(self, method, path, body=None, binary=False):
-                self_test.assertEqual(method, 'GET')
-                return []
-        self_test = self
-        with self.assertRaisesRegex(ValueError, 'manually'):
-            publish(self.first, API())
-
-    def test_existing_asset_fails_before_any_upload(self):
-        class API:
-            def request(self, method, path, body=None, binary=False):
-                self_test.assertEqual(method, 'GET')
-                return [{'id': 1, 'tag_name': 'flutter-3.47.2',
-                         'assets': [{'name': 'tools.manifest.json'}]}]
-        self_test = self
-        with self.assertRaisesRegex(ValueError, 'already exist'):
-            publish(self.first, API())
-
-    def test_bad_upload_digest_fails(self):
-        class API:
-            def request(self, method, path, body=None, binary=False):
-                if method == 'GET':
-                    return [{'id': 1, 'tag_name': 'flutter-3.47.2', 'assets': [],
-                             'upload_url': 'https://uploads.github.com/assets{?name}'}]
-                self_test.assertTrue(binary)
-                return {'name': names('3.47.2')['tools'], 'size': len(body), 'digest': 'sha256:' + '0' * 64}
-        self_test = self
-        with self.assertRaisesRegex(ValueError, 'hash mismatch'):
-            publish(self.first, API())
-
 
 class SelectionTest(unittest.TestCase):
     def test_compiler_help_uses_boolean_flag_notation(self):
@@ -158,15 +107,6 @@ class SelectionTest(unittest.TestCase):
     def test_untrusted_version_input(self):
         with self.assertRaises(ValueError):
             select('$(id)', ['3.47.2'], {'3.47.2': {}})
-
-    def test_existing_draft_found_on_second_page(self):
-        class API:
-            def request(self, method, path):
-                if path.endswith('page=1'):
-                    return [{'tag_name': f'other-{i}'} for i in range(100)]
-                return [{'id': 9, 'tag_name': 'flutter-3.47.2', 'draft': True}]
-        self.assertEqual(existing_release(API(), '3.47.2')['id'], 9)
-
 
 if __name__ == '__main__':
     unittest.main()

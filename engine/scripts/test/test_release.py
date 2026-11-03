@@ -24,70 +24,89 @@ class FakeGitHub:
 
 
 class ReleaseTests(unittest.TestCase):
-    def test_missing_release_never_created(self):
-        github = FakeGitHub()
-        with self.assertRaisesRegex(ValueError, 'manually'):
-            github_release.existing_release(github, '3.47.2')
-        self.assertEqual(github.created, [])
-
-    def test_existing_draft_found(self):
-        github = FakeGitHub(issues=[{'id': 7, 'tag_name': 'flutter-3.47.2', 'draft': True}])
-        self.assertEqual(github_release.existing_release(github, '3.47.2')['id'], 7)
-        self.assertEqual(github.created, [])
-
-    def test_uploads_only_engine_files_and_manifest(self):
+    def publish(self, kind, manifest, releases=(), tags=()):
+        """Publishes fixture files for `manifest`; returns the API calls."""
         from unittest.mock import patch
         import hashlib
+        calls = []
+        class API:
+            token = 'test'
+
+            def exists(self, tag):
+                return tag in tags
+            def request(self, method, path, body=None, upload=None):
+                calls.append((method, path, body))
+                if method == 'GET':
+                    return list(releases)
+                if upload is None:
+                    return {'id': 7, 'html_url': 'review'}
+                data = Path(upload).read_bytes()
+                return {'state': 'uploaded', 'size': len(data), 'digest': 'sha256:' + hashlib.sha256(data).hexdigest()}
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            filenames = ['libflutter-arm64_v8a-release.jar', 'gen_snapshot-linux-x64',
-                         'flutter_embedding_release.jar', 'engine.manifest.json']
-            for name in filenames:
+            for name in [row['name'] for row in manifest['files']] + [github_release.KINDS[kind][1]]:
                 (root / name).write_bytes(b'fixture')
-            calls = []
-            class API:
-                def request(self, method, path, body=None, upload=None):
-                    calls.append((method, path))
-                    if method == 'GET':
-                        return [{'id': 7, 'tag_name': 'flutter-3.47.2', 'draft': True,
-                                 'assets': [{'name': 'tools.manifest.json'}], 'html_url': 'review'}]
-                    if upload is None:
-                        raise AssertionError('Release/tag mutation attempted')
-                    data = Path(upload).read_bytes()
-                    return {'state': 'uploaded', 'size': len(data), 'digest': 'sha256:' + hashlib.sha256(data).hexdigest()}
-            manifest = {'flutter_version': '3.47.2', 'files': [{'name': n} for n in filenames[:-1]]}
-            with patch.object(github_release, 'validate', return_value=manifest):
-                github_release.publish(API(), root)
-            self.assertEqual(sum(method == 'POST' for method, _ in calls), 4)
-            self.assertTrue(all(method == 'GET' or '/assets?' in path for method, path in calls))
+            with patch.dict(github_release.KINDS, {kind: (lambda _: manifest, github_release.KINDS[kind][1])}):
+                github_release.publish(API(), kind, root)
+        return calls
 
-    def test_ios_uploads_only_a_verified_engine(self):
+    def test_each_build_becomes_one_new_draft_release(self):
+        manifest = {'flutter_version': '3.47.2', 'build_id': '63b8646d-e244-413e-a773-3455aeeef4b2',
+                    'builder_repo_commit': 'c' * 40,
+                    'files': [{'name': n} for n in ('libflutter-arm64_v8a-release.jar', 'gen_snapshot-linux-x64')]}
+        calls = self.publish('engine', manifest)
+        created = [body for method, path, body in calls if path == 'releases']
+        self.assertEqual(len(created), 1)
+        self.assertEqual({k: created[0][k] for k in ('tag_name', 'target_commitish', 'draft')},
+                         {'tag_name': 'engine-3.47.2-63b8646d', 'target_commitish': 'c' * 40, 'draft': True})
+        uploads = [path for method, path, body in calls if '/assets?' in path]
+        self.assertEqual([path.rsplit('=', 1)[1] for path in uploads],
+                         ['libflutter-arm64_v8a-release.jar', 'gen_snapshot-linux-x64', 'engine.manifest.json'])
+
+    def test_tools_are_tagged_by_their_reproducible_digest(self):
+        manifest = {'flutter_version': '3.47.2', 'builder_repo_commit': 'c' * 40,
+                    'files': [{'name': 'flutter_patcher_tools-3.47.2.dill', 'sha256': '6427c8dd' + '0' * 56}]}
+        self.assertEqual(github_release.release_tag('tools', manifest), 'tools-3.47.2-6427c8dd')
+
+    def test_an_existing_draft_or_tag_is_never_changed(self):
+        manifest = {'flutter_version': '3.47.2', 'build_id': '63b8646d-e244-413e-a773-3455aeeef4b2',
+                    'builder_repo_commit': 'c' * 40, 'files': [{'name': 'gen_snapshot-linux-x64'}]}
+        for kwargs in ({'releases': [{'tag_name': 'engine-3.47.2-63b8646d', 'draft': True}]},
+                       {'tags': {'engine-3.47.2-63b8646d'}}):
+            with self.subTest(**{k: str(v) for k, v in kwargs.items()}):
+                with self.assertRaisesRegex(github_release.InvalidArtifact, 'never changed'):
+                    self.publish('engine', manifest, **kwargs)
+
+    def test_an_upload_with_another_digest_fails(self):
         from unittest.mock import patch
-        import hashlib
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            filenames = ['Flutter.xcframework.zip', 'gen_snapshot_ios-darwin-arm64', 'engine-ios.manifest.json']
-            for name in filenames:
-                (root / name).write_bytes(b'fixture')
-            uploads = []
-            class API:
-                def request(self, method, path, body=None, upload=None):
-                    if method == 'GET':
-                        return [{'id': 7, 'tag_name': 'flutter-3.47.2', 'assets': [], 'html_url': 'review'}]
-                    uploads.append(path)
-                    data = Path(upload).read_bytes()
-                    return {'state': 'uploaded', 'size': len(data), 'digest': 'sha256:' + hashlib.sha256(data).hexdigest()}
-            manifest = {'flutter_version': '3.47.2', 'files': [{'name': n} for n in filenames[:-1]],
-                        'verify': {'snapshot': 'pending', 'device': 'pending'}}
-            with patch.object(github_release, 'validate_ios', return_value=manifest):
-                with self.assertRaises(github_release.InvalidArtifact):
-                    github_release.publish_ios(API(), root)
-                self.assertEqual(uploads, [])
-                manifest['verify'] = {'snapshot': 'passed', 'device': 'skipped'}
-                github_release.publish_ios(API(), root)
-            self.assertEqual(len(uploads), 3)
-            self.assertIn('name=engine-ios.manifest.json', uploads[-1])
+        manifest = {'flutter_version': '3.47.2', 'build_id': '63b8646d-e244-413e-a773-3455aeeef4b2',
+                    'builder_repo_commit': 'c' * 40, 'files': [{'name': 'gen_snapshot-linux-x64'}]}
+        class API:
+            token = 'test'
 
+            def exists(self, tag):
+                return False
+            def request(self, method, path, body=None, upload=None):
+                if method == 'GET':
+                    return []
+                if upload is None:
+                    return {'id': 7}
+                return {'state': 'uploaded', 'size': Path(upload).stat().st_size, 'digest': 'sha256:' + '0' * 64}
+        with tempfile.TemporaryDirectory() as directory:
+            for name in ('gen_snapshot-linux-x64', 'engine.manifest.json'):
+                (Path(directory) / name).write_bytes(b'fixture')
+            with patch.dict(github_release.KINDS, {'engine': (lambda _: manifest, 'engine.manifest.json')}):
+                with self.assertRaisesRegex(github_release.InvalidArtifact, 'SHA-256 mismatch'):
+                    github_release.publish(API(), 'engine', directory)
+
+    def test_ios_requires_a_verified_engine(self):
+        from unittest.mock import patch
+        manifest = {'verify': {'snapshot': 'pending', 'device': 'pending'}}
+        with patch.object(github_release, 'validate_ios', return_value=manifest):
+            with self.assertRaises(github_release.InvalidArtifact):
+                github_release.verified_ios(Path('.'))
+            manifest['verify'] = {'snapshot': 'passed', 'device': 'skipped'}
+            self.assertIs(github_release.verified_ios(Path('.')), manifest)
     def test_select_stable_by_revision_not_list_order(self):
         document = {'current_release': {'stable': 'a'}, 'releases': [
             {'hash': 'b', 'version': '9.0.0', 'channel': 'beta'},

@@ -100,6 +100,14 @@ class SelectionTest(unittest.TestCase):
     def test_all(self):
         self.assertEqual(select('all', ['3.47.2'], {'3.47.2': {}}), ['3.47.2'])
 
+    def test_list(self):
+        table = ['3.47.0', '3.47.1', '3.47.2']
+        pins = dict.fromkeys(table, {})
+        self.assertEqual(select('3.47.2, 3.47.0', table, pins), ['3.47.2', '3.47.0'])
+        for requested in ('3.47.0,3.47.0', '3.47.0,3.47.3'):
+            with self.assertRaises(ValueError):
+                select(requested, table, pins)
+
     def test_support_drift(self):
         with self.assertRaises(ValueError):
             select('all', ['3.47.2'], {'3.47.1': {}})

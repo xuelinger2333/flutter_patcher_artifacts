@@ -11,8 +11,10 @@ def select(requested, versions, pins):
     require(versions and len(set(versions)) == len(versions), 'Invalid support table')
     require(all(re.fullmatch(r'\d+\.\d+\.\d+', item) for item in versions), 'Invalid version')
     require(set(versions) == set(pins), 'Support table and tool pins differ')
-    require(requested == 'all' or requested in versions, 'Unsupported Flutter version')
-    return versions if requested == 'all' else [requested]
+    selected = versions if requested == 'all' else [item.strip() for item in requested.split(',')]
+    require(len(set(selected)) == len(selected), 'Duplicate Flutter version')
+    require(all(item in versions for item in selected), 'Unsupported Flutter version')
+    return selected
 
 
 if __name__ == '__main__':

@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       flutter_version:
-        description: Supported Flutter version, or all
+        description: Supported Flutter version, a comma-separated list, or all
         type: string
         required: true
         default: all

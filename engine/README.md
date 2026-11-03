@@ -87,7 +87,8 @@ Windows prerequisites, checked by `install_runner.ps1` and the pipeline itself:
   bootstraps its own CPython through `bootstrap\win_tools.bat`; `gclient`,
   hooks and `flutter/tools/gn` use that one.
 - A short `FLUTTER_PATCHER_ENGINE_HOME` such as `D:\fpe` (24 characters at most), kept with
-  the installing shell's PATH and proxy in the runner's `.env`, so the engine
+  the installing shell's PATH, proxy, `ANDROID_SDK_ROOT` and `JAVA_HOME` (for device
+  pairing) in the runner's `.env`, so the engine
   checkout stays under `MAX_PATH`; the pipeline additionally runs every git
   with `core.longpaths=true`, `core.autocrlf=false` and `core.filemode=false`
   through `GIT_CONFIG_*` environment variables, without touching user config.

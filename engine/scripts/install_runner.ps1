@@ -67,9 +67,10 @@ $token = $token.Trim()
     --name $RunnerName --labels engine-builder --work _work --disableupdate
 if ($LASTEXITCODE -ne 0) { Fail 'runner configuration failed' }
 Remove-Variable token
-# Jobs run with this shell's PATH (Git, Python, bash), proxy and engine home.
+# Jobs run with this shell's PATH (Git, Python, bash), proxy, Android SDK
+# (device pairing) and engine home.
 $environment = @("FLUTTER_PATCHER_ENGINE_HOME=$home_dir", "PATH=$env:PATH")
-foreach ($name in @('HTTP_PROXY', 'HTTPS_PROXY', 'NO_PROXY')) {
+foreach ($name in @('HTTP_PROXY', 'HTTPS_PROXY', 'NO_PROXY', 'ANDROID_SDK_ROOT', 'JAVA_HOME')) {
     $value = [Environment]::GetEnvironmentVariable($name)
     if ($value) { $environment += "$name=$value" }
 }

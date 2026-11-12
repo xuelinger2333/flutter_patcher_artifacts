@@ -28,7 +28,8 @@ def exercise(dart, tool, flutter, baseline, work, *, packages=None, four_check_s
         (package / 'main.dart').write_text(
             '@pragma("vm:entry-point")\n@pragma("dyn-module:entry-point")\n'
             'Object? dynamicModuleEntrypoint() => <Object?>[1,7,"' + 'a' * 64 +
-            '","' + tier + '",patchedMain,null];\nvoid patchedMain() { print("patch smoke"); }\n')
+            '","' + tier + '",patchedMain,null];\n'
+            'void patchedMain() { print(const String.fromEnvironment("SMOKE_DEFINE", defaultValue: "smoke-undefined")); }\n')
         request = work / f'{tier}-request.json'
         request.write_text(json.dumps({
             'tier': tier, 'emit': True, 'seq': 7, 'fingerprint': 'a' * 64, 'target_os': 'android',
@@ -37,6 +38,7 @@ def exercise(dart, tool, flutter, baseline, work, *, packages=None, four_check_s
             'baseline': str(baseline), 'interface': str(interface),
             'compiler_interface': str(detailed), 'allocated': str(allocated),
             'own': ['patch.7.smoke'], 'original_own': ['smoke'],
+            'environment_defines': {'SMOKE_DEFINE': 'smoke-defined'},
             'out': str(work / f'{tier}.bc')}))
         result = subprocess.run([str(dart), str(tool), 'compile-patch', '--request', str(request)],
                                 text=True, capture_output=True, check=True)
@@ -44,6 +46,9 @@ def exercise(dart, tool, flutter, baseline, work, *, packages=None, four_check_s
         assert report['status'] == 'compiled', report
         assert report['emitted_libraries'] == ['package:patch.7.smoke/main.dart'], report
         assert report['bytes'] > 120, report
+        # The request's defines are the ones the module is compiled with.
+        module = (work / f'{tier}.bc').read_bytes()
+        assert b'smoke-defined' in module and b'smoke-undefined' not in module, 'environment_defines not applied'
         results[tier] = report
     bad = json.loads(request.read_text())
     bad['seq'] = 8

@@ -58,7 +58,6 @@ Future<Map<String, Object?>> compilePatch(List<String> args) async {
       // everything they depend on).
       File(value('baseline')).absolute.uri,
     ]
-    ..environmentDefines = defines ?? const {}
     ..packagesFileUri = scheme == null
         ? File(value('packages')).absolute.uri
         : Uri.parse(value('packages'))
@@ -109,6 +108,9 @@ Future<Map<String, Object?>> compilePatch(List<String> args) async {
       options: options,
       requireMain: false,
       includePlatform: false,
+      // Here, not on the options: compileToKernel replaces the options'
+      // defines with these.
+      environmentDefines: {...?defines},
       aot: false,
       useGlobalTypeFlowAnalysis: false,
     ),

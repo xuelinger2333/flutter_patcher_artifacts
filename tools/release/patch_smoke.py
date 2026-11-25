@@ -17,7 +17,8 @@ def exercise(dart, tool, flutter, baseline, work, *, packages=None, four_check_s
         {'name': 'patch.7.smoke', 'rootUri': package.as_uri() + '/',
          'packageUri': '', 'languageVersion': '3.13'}]}))
     interface = work / 'interface.yaml'
-    interface.write_text(json.dumps({name: [{'library': 'dart:core'}] for name in
+    interface.write_text(json.dumps({name: [{'library': 'dart:core'},
+                                            {'library': 'package:shape_fixtures/host_fields.dart'}] for name in
         ['callable', 'extendable', 'can-be-used-as-type', 'can-be-overridden']}))
     detailed = work / 'compiler-interface.json'
     detailed.write_text('{"callable":[]}')
@@ -77,5 +78,34 @@ def exercise(dart, tool, flutter, baseline, work, *, packages=None, four_check_s
             assert all(row.get('file') and row.get('line') and row.get('column')
                        for row in report['checks'][category]), report
         results['four_checks'] = report
+    # Host static fields are read as the device's host has them: directly
+    # where its AOT build folded the initializer to a literal, through the
+    # getter where the VM initializes lazily (issue #19).
+    entry = ('import "package:shape_fixtures/host_fields.dart";\n'
+             '@pragma("vm:entry-point")\n@pragma("dyn-module:entry-point")\n'
+             'Object? dynamicModuleEntrypoint() => <Object?>[1,7,"' + 'a' * 64 +
+             '","lean",patchedMain,null];\n')
+    (package / 'main.dart').write_text(entry + 'void patchedMain() { print([HostFields.hostFoldedNull, '
+                                      'HostFields.hostFoldedPlatform, HostFields.hostConstRef]); }\n')
+    fields = json.loads(request.read_text())
+    fields.update(tier='lean', emit=True, out=str(work / 'host-fields.bc'))
+    host_fields = work / 'host-fields.json'
+    host_fields.write_text(json.dumps(fields))
+    result = subprocess.run([str(dart), str(tool), 'compile-patch', '--request', str(host_fields)],
+                            text=True, capture_output=True, check=True)
+    report = json.loads(result.stdout)
+    assert report['status'] == 'compiled', report
+    module = (work / 'host-fields.bc').read_bytes()
+    assert b'get:hostConstRef' in module, 'lazy host field read without its getter'
+    assert b'get:hostFolded' not in module, 'getter the host folded away is called'
+    # The host keeps no setter for a static field: assigning one that needs it is rejected.
+    (package / 'main.dart').write_text(entry + 'void patchedMain() { HostFields.hostLateFinal = 1; }\n')
+    fields.update(emit=False)
+    host_fields.write_text(json.dumps(fields))
+    result = subprocess.run([str(dart), str(tool), 'compile-patch', '--request', str(host_fields)],
+                            text=True, capture_output=True, check=True)
+    report = json.loads(result.stdout)
+    assert report['status'] == 'rejected' and report['checks']['host_fields'][0]['line'], report
+    results['host_fields'] = report
     (work / 'verification.json').write_text(json.dumps(results, indent=2) + '\n')
     return results

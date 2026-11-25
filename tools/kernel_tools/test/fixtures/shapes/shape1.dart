@@ -1,6 +1,9 @@
 // 1 · void main() => runApp(X())
 import 'package:flutter/material.dart';
 import 'common.dart';
+// Host static fields the patch smoke reads and assigns.
+// ignore: unused_import
+import 'host_fields.dart';
 
 void main() => runApp(const App());
 

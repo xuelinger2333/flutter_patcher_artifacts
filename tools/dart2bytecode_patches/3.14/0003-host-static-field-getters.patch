@@ -1,0 +1,38 @@
+diff --git a/pkg/dart2bytecode/lib/bytecode_generator.dart b/pkg/dart2bytecode/lib/bytecode_generator.dart
+--- a/pkg/dart2bytecode/lib/bytecode_generator.dart
++++ b/pkg/dart2bytecode/lib/bytecode_generator.dart
+@@ -908,7 +908,11 @@
+ 
+     // Static fields also need a getter if they have a non-trivial initializer,
+     // because it needs to be initialized lazily.
+-    if (_hasNonTrivialInitializer(field)) return true;
++    if (extraLoadedLibraries.contains(field.enclosingLibrary)
++        ? _hostInitializesLazily(field)
++        : _hasNonTrivialInitializer(field)) {
++      return true;
++    }
+ 
+     // Avoid runtime check of field type as part of (more frequently used)
+     // non-shared fields inline getter code.
+@@ -923,6 +927,21 @@
+     return field.isLate && field.initializer == null;
+   }
+ 
++  // A static field of a library the host loaded from Kernel has the getter
++  // the VM gave it there: none only when the initializer is a literal
++  // (SimpleExpressionConverter::IsSimple in runtime/vm/kernel_loader.cc). A
++  // constant that is not written as one, such as a reference to a const
++  // variable, leaves the field lazily initialized through its getter.
++  bool _hostInitializesLazily(Field field) {
++    final initializer = field.initializer;
++    return initializer != null &&
++        !(initializer is StringLiteral ||
++            initializer is BoolLiteral ||
++            initializer is IntLiteral ||
++            initializer is DoubleLiteral ||
++            initializer is NullLiteral);
++  }
++
+   bool _needsSetter(Field field) {
+     // Avoid runtime check of field type as part of (more frequently used)
+     // non-shared fields inline setter code.

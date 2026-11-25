@@ -3,7 +3,11 @@ import 'dart:io';
 import 'package:crypto/crypto.dart';
 import 'package:front_end/src/api_unstable/vm.dart';
 import 'package:vm/kernel_front_end.dart';
+import 'package:vm/target_os.dart';
 import 'package:vm/transformations/prefix_library_uris.dart' as prefix;
+import 'package:vm/transformations/unreachable_code_elimination.dart'
+    as unreachable_code_elimination;
+import 'package:vm/transformations/vm_constant_evaluator.dart';
 import 'package:dart2bytecode/bytecode_generator.dart';
 import 'package:dart2bytecode/options.dart';
 import 'package:dart2bytecode/bytecode_serialization.dart';
@@ -272,14 +276,17 @@ Future<Map<String, Object?>> compilePatch(List<String> args) async {
     await File(value('compiler_interface')).readAsString(),
   );
   final ffi = FfiCheck();
+  final hostFields = HostFieldCheck(loadedLibraries);
   for (final lib in module) {
     lib.accept(ffi);
+    lib.accept(hostFields);
   }
   final checks = <String, Object?>{
     'interface': diagnostics,
     'allocation': checker.issues,
     'inherited': inherited,
     'ffi': ffi.issues,
+    'host_fields': hostFields.issues,
   };
   final report = <String, Object?>{
     'tier': tier,
@@ -297,7 +304,8 @@ Future<Map<String, Object?>> compilePatch(List<String> args) async {
   if (diagnostics.isNotEmpty ||
       checker.issues.isNotEmpty ||
       inherited.isNotEmpty ||
-      ffi.issues.isNotEmpty) {
+      ffi.issues.isNotEmpty ||
+      hostFields.issues.isNotEmpty) {
     return {'status': 'rejected', ...report};
   }
   final slots = checkEntry(
@@ -336,10 +344,29 @@ Future<Map<String, Object?>> compilePatch(List<String> args) async {
       'Unprefixed module library: ${libraries.where((u) => !u.startsWith(uriPrefix)).join(', ')}',
     );
   }
+  final core = CoreTypes(component);
+  // The baseline is the host before its AOT build: that build folded what the
+  // compile-time environment decides (`kDebugMode ? a : b`, Platform.isIOS),
+  // and the VM gave each static field a getter by the initializer that was
+  // left. Folded the same way here, the host libraries show the generator
+  // the fields the device has.
+  unreachable_code_elimination.transformLibraries(
+    options.target!,
+    loadedLibraries.toList(),
+    VMConstantEvaluator.create(
+      options.target!,
+      component,
+      targetOS == null ? null : TargetOS.fromString(targetOS),
+      enableAsserts: false,
+      // A CLI that sends no defines still patches a release host.
+      environmentDefines: defines ?? const {'dart.vm.product': 'true'},
+      coreTypes: core,
+    ),
+    false,
+  );
   final output = File(value('out'));
   final sink = output.openWrite();
   try {
-    final core = CoreTypes(component);
     generateBytecode(
       component,
       sink,

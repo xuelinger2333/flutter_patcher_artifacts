@@ -58,6 +58,39 @@ bool _isNativeBinding(Member member) => member.annotations.any((a) {
       );
 });
 
+/// Rejects assigning a host field the host can only assign itself. The AOT
+/// host keeps a getter for a static field a module may use, never a setter;
+/// one that is assigned through its setter (late final, to refuse a second
+/// assignment) has none for the module to call, and loading the module
+/// would abort the app.
+class HostFieldCheck extends RecursiveVisitor {
+  HostFieldCheck(this.host);
+  final Set<Library> host;
+  final List<Map<String, Object?>> issues = [];
+
+  @override
+  void visitStaticSet(StaticSet node) {
+    final target = node.target;
+    if (target is Field &&
+        target.isLate &&
+        target.isFinal &&
+        target.initializer == null &&
+        host.contains(target.enclosingLibrary)) {
+      final owner = target.enclosingClass;
+      issues.add(
+        site(
+          node,
+          'HOST_FIELD_NOT_ASSIGNABLE',
+          '${owner == null ? '' : '${owner.name}.'}${target.name.text} is a late final '
+              'static field of host code, which a patch cannot assign: '
+              'assign it in code the host keeps, or ship a new host release',
+        ),
+      );
+    }
+    super.visitStaticSet(node);
+  }
+}
+
 /// Rejects native bindings and FFI calls in module code.
 class FfiCheck extends RecursiveVisitor {
   final List<Map<String, Object?>> issues = [];

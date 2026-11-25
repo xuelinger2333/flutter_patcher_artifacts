@@ -22,6 +22,17 @@ def release(tag, build_id, extra_asset=False, draft=False, file_digest='e' * 64)
     return {'tag_name': tag, 'draft': draft, 'assets': assets}, data
 
 
+def tools_release(letter):
+    manifest = {'flutter_version': '3.47.2',
+                'files': [{'name': 'tools.dill', 'size': 3, 'sha256': letter * 64}]}
+    data = json.dumps(manifest).encode()
+    tag = 'tools-3.47.2-' + letter * 8
+    return ({'tag_name': tag, 'draft': False, 'assets': [
+        {'name': 'tools.manifest.json', 'browser_download_url': tag,
+         'digest': 'sha256:' + hashlib.sha256(data).hexdigest()},
+        {'name': 'tools.dill', 'size': 3, 'digest': 'sha256:' + letter * 64}]}, data)
+
+
 class Releases:
     def __init__(self, *releases):
         self.releases = {row[0]['tag_name']: row for row in releases}
@@ -52,6 +63,21 @@ class IndexTests(unittest.TestCase):
         self.assertEqual(sorted(entry['releases']), sorted([FIRST[0], SECOND[0]]))
         with self.assertRaisesRegex(InvalidArtifact, 'already listed'):
             self.add(value, github, FIRST[0])
+
+    def test_a_tools_release_replaces_the_current_one_only_when_asked(self):
+        github = Releases(tools_release('a'), tools_release('b'), tools_release('c'), release(*FIRST))
+        value = {'schema': 1, 'flutter': {}}
+        a, b, c = ('tools-3.47.2-' + letter * 8 for letter in 'abc')
+        self.add(value, github, a)
+        self.add(value, github, b)
+        index.add(github, value, c, fetch=github.fetch, replace_current=True)
+        entry = value['flutter']['3.47.2']
+        self.assertEqual(entry['current'], {'tools': c})
+        self.assertNotIn('replaced_by', entry['releases'][a])
+        self.assertEqual(entry['releases'][b]['replaced_by'], c)
+        self.assertNotIn('replaced_by', entry['releases'][c])
+        with self.assertRaisesRegex(InvalidArtifact, 'only a tools release'):
+            index.add(github, value, FIRST[0], fetch=github.fetch, replace_current=True)
 
     def test_only_a_published_release_matching_its_manifest_is_listed(self):
         for bad in (release(*FIRST, draft=True), release(*FIRST, extra_asset=True),

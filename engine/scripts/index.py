@@ -4,9 +4,14 @@ artifacts.
 
 `index.py add <tag>...` lists published (not draft) releases. Each release's
 assets must be exactly the files its manifest names, with the manifest's
-sizes and digests. Entries are never changed or removed; the release added
-last becomes `current` for its kind and Flutter version, which new hosts use.
-Hosts already built keep using the releases their baselines record.
+sizes and digests. Entries are never removed; the release added last becomes
+`current` for its kind and Flutter version, which new hosts use. Hosts
+already built keep using the releases their baselines record.
+
+`index.py add --replace-current <tools tag>...` is for a tools release that
+fixes how patches are compiled: the tools release that was current is marked
+`replaced_by` the new one, and hosts built with it patch with the new one.
+Nothing else in an entry ever changes.
 """
 
 import argparse
@@ -30,12 +35,13 @@ def download(url):
         return response.read(1024 * 1024 + 1)
 
 
-def add(github, index, tag, fetch=download):
+def add(github, index, tag, fetch=download, replace_current=False):
     match = TAG.fullmatch(tag)
     require(match, f'invalid release tag: {tag}')
     kind, version = match.groups()
     entry = index['flutter'].setdefault(version, {'current': {}, 'releases': {}})
     require(tag not in entry['releases'], f'{tag} is already listed')
+    require(kind == 'tools' or not replace_current, f'{tag}: only a tools release replaces another')
     release = github.request('GET', f'releases/tags/{tag}', missing_ok=True)
     require(release is not None and not release.get('draft'), f'{tag} is not a published release')
     assets = {asset['name']: asset for asset in release.get('assets', [])}
@@ -57,6 +63,9 @@ def add(github, index, tag, fetch=download):
         require(type(manifest.get('engine_api')) is int and isinstance(manifest.get('capabilities'), list),
                 f'{tag}: engine manifest has no engine_api/capabilities')
     entry['releases'][tag] = {'kind': kind, 'manifest_sha256': digest}
+    replaced = entry['current'].get(kind)
+    if replace_current and replaced:
+        entry['releases'][replaced]['replaced_by'] = tag
     entry['current'][kind] = tag
 
 
@@ -64,14 +73,17 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--repository', default=os.environ.get('GITHUB_REPOSITORY'))
     commands = parser.add_subparsers(dest='command', required=True)
-    commands.add_parser('add').add_argument('tags', nargs='+')
+    adding = commands.add_parser('add')
+    adding.add_argument('--replace-current', action='store_true',
+                        help='Tools only: hosts built with the current release patch with this one')
+    adding.add_argument('tags', nargs='+')
     args = parser.parse_args()
     try:
         github = GitHub(args.repository or '', os.environ.get('GITHUB_TOKEN'))
         index = read_json(INDEX) if INDEX.exists() else {'schema': 1, 'flutter': {}}
         require(index.get('schema') == 1, 'unsupported index schema')
         for tag in args.tags:
-            add(github, index, tag)
+            add(github, index, tag, replace_current=args.replace_current)
         write_json(INDEX, index)
     except (InvalidArtifact, OSError, ValueError, KeyError, TypeError) as error:
         print(f'INDEX_FAILED: {error}', file=sys.stderr)

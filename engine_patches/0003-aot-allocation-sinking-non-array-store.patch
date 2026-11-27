@@ -1,0 +1,19 @@
+diff --git a/runtime/vm/compiler/backend/redundancy_elimination.cc b/runtime/vm/compiler/backend/redundancy_elimination.cc
+index e1923debee4..ebba4f4b0f8 100644
+--- a/runtime/vm/compiler/backend/redundancy_elimination.cc
++++ b/runtime/vm/compiler/backend/redundancy_elimination.cc
+@@ -3800,9 +3800,11 @@ bool AllocationSinking::IsSafeUse(Value* use, SafeUseCheck check_type) {
+         return false;
+       }
+       const intptr_t index = store->index()->BoundSmiConstant();
+-      if (index < 0 || index >= use->definition()
+-                                    ->AsArrayAllocation()
+-                                    ->GetConstantNumElements()) {
++      // The allocation may be an object that is indexed like an array, as a
++      // typed data view is; only an array allocation has elements to sink.
++      auto* const array = use->definition()->AsArrayAllocation();
++      if (array == nullptr || index < 0 ||
++          index >= array->GetConstantNumElements()) {
+         return false;
+       }
+       if (auto* alloc_typed_data = use->definition()->AsAllocateTypedData()) {

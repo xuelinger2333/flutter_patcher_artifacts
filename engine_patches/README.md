@@ -19,6 +19,33 @@ Verified source identities:
 This checked-in patch is the authoritative build input. Applicability must be checked again
 on each clean pinned checkout. Never apply with --3way or --force.
 
+`0002-aot-guarded-single-target-calls.patch` changes only the AOT compiler
+under `runtime/vm/compiler/` in the same Dart checkout, so only gen_snapshot;
+libflutter.so is the same with and without it. It adds two gen_snapshot
+flags, both off unless passed:
+
+- `--guard_single_target_calls`: a call of a member that a dynamic module may
+  override, and that has one implementation among the precompiled classes,
+  is compiled as a class id check and a direct call of that implementation,
+  with the dispatch the compiler emitted before on the other branch. Without
+  it every such call goes through the slower dispatch, which is what a host
+  that keeps whole packages overridable would pay on each of their calls.
+- `--lazy_dyn_module_tearoffs`: a dynamic module pragma no longer forces a
+  precompiled tear-off of every method it makes callable; a tear-off is
+  compiled where the program takes one, as without the pragma.
+
+The CLI passes both when the engine release lists `guarded_calls`.
+
+Verified source identity: Flutter 3.50.0, Dart `fa8c1270c37` (3.14.0).
+
+`0003-aot-allocation-sinking-non-array-store.patch` changes only
+`runtime/vm/compiler/backend/redundancy_elimination.cc`, so only gen_snapshot.
+Allocation sinking took every allocation an indexed store writes to for an
+array allocation and read its length; for an object indexed like an array,
+as a typed data view is (`Uint8List.view(b)..[0] = x`), it read through a
+null pointer and gen_snapshot crashed. Such an allocation is now left as it
+is. A host that keeps whole packages compiles code a smaller host never
+reaches, which is how the crash showed (package `image`, the WebP reader).
 ## Host-only patches
 
 `engine_patches/<host>/*.patch` (today `windows-x64/`) are applied in addition

@@ -442,14 +442,54 @@ class Surface {
   };
 }
 
+/// Lists every library of the [pinned] packages whole. A patch never carries
+/// these packages, so what it may use of them is what the host keeps: all of
+/// it, not only what the application used when the host was built.
+///
+/// A library row covers the public names. Private ones are listed by name
+/// and only as callable: host code reaches them on a module's instances
+/// (`_addListener` on a provider the module declares), while module source
+/// cannot write another library's private name, so it never overrides one or
+/// names a private class.
+void _pinnedRows(Component component, Set<String> pinned, InterfaceDocument doc) {
+  for (final lib in component.libraries) {
+    final uri = lib.importUri;
+    if (uri.scheme != 'package' || !pinned.contains(uri.pathSegments.first)) {
+      continue;
+    }
+    for (final section in const [
+      'callable',
+      'extendable',
+      'can-be-overridden',
+      'can-be-used-as-type',
+    ]) {
+      doc.add(section, '$uri');
+    }
+    for (final m in lib.members) {
+      if (m.name.isPrivate) doc.add('callable', '$uri', member: memberName(m));
+    }
+    for (final cls in lib.classes) {
+      final private = cls.name.startsWith('_');
+      if (private) doc.add('callable', '$uri', type: cls.name);
+      for (final m in cls.members) {
+        if ((private || m.name.isPrivate) && indexableMember(m)) {
+          doc.add('callable', '$uri', type: cls.name, member: memberName(m));
+        }
+      }
+    }
+  }
+}
+
 /// [own] packages are the patch's: their libraries are walked and never
 /// recorded as targets. [scan] packages are walked too but stay host targets:
 /// a whole-tier patch carries them (so their references must be covered),
-/// while a lean patch keeps using the host's copies.
+/// while a lean patch keeps using the host's copies. [pinned] packages are
+/// the host's for good and are listed whole ([_pinnedRows]).
 Surface extractSurface(
   Component component,
   Set<String> own, {
   Set<String> scan = const {},
+  Set<String> pinned = const {},
 }) {
   final collector = _Collector(own)..indexConstDeclarations(component);
   bool walk(Library lib) =>
@@ -596,5 +636,6 @@ Surface extractSurface(
   members('callable', collector.callable);
   members('can-be-overridden', collector.canBeOverridden);
   _dynamicRows(component, collector, doc);
+  _pinnedRows(component, pinned, doc);
   return Surface(doc, barrels);
 }

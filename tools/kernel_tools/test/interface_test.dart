@@ -484,6 +484,76 @@ void main() {
     check(has('dynamically-callable', '_JsonMap', '[]'), 'dynamic selector');
     check(!has('dynamically-callable', 'Mock', '[]'), 'noSuchMethod excluded');
   });
+  test('a pinned package is listed whole; its privates only as callable', () {
+    final uri = Uri.parse('file:///fixture.dart');
+    Procedure named(String name, Library owner, {bool isStatic = false}) =>
+        Procedure(
+          Name(name, owner),
+          ProcedureKind.Method,
+          FunctionNode(EmptyStatement()),
+          isStatic: isStatic,
+          fileUri: uri,
+        );
+    final app = library('package:app/main.dart')
+      ..addProcedure(named('main', library('package:app/x.dart'), isStatic: true));
+    final pinned = library('package:plugin/plugin.dart');
+    final free = library('package:free/free.dart');
+    final foreign = library('package:plugin/other.dart');
+    pinned
+      ..addProcedure(named('_helper', pinned, isStatic: true))
+      ..addProcedure(named('helper', pinned, isStatic: true))
+      ..addClass(
+        Class(name: 'Public', fileUri: uri)
+          ..addProcedure(named('open', pinned))
+          ..addProcedure(named('_hidden', pinned))
+          // A private name of another library, as a mixin application copies
+          // one: no row can name it.
+          ..addProcedure(named('_copied', foreign)),
+      )
+      ..addClass(
+        Class(name: '_Private', fileUri: uri)
+          ..addProcedure(named('open', pinned)),
+      );
+    free.addClass(Class(name: 'Free', fileUri: uri));
+    final doc = extractSurface(
+      Component(libraries: [app, pinned, free]),
+      {'app'},
+      pinned: {'plugin', 'absent'},
+    ).interface;
+    const whole = [
+      'callable',
+      'extendable',
+      'can-be-overridden',
+      'can-be-used-as-type',
+    ];
+    for (final section in whole) {
+      check(
+        doc.rows(section).any(
+          (r) => r.length == 1 && r['library'] == 'package:plugin/plugin.dart',
+        ),
+        'library row in $section',
+      );
+    }
+    final named_ = [
+      for (final section in InterfaceDocument.sections)
+        for (final r in doc.rows(section))
+          if (r.length > 1) '$section ${r['class'] ?? ''} ${r['member'] ?? ''}',
+    ]..sort();
+    check(
+      jsonEncode(named_) ==
+          jsonEncode([
+            'callable  _helper',
+            'callable Public _hidden',
+            'callable _Private ',
+            'callable _Private open',
+          ]),
+      'private rows: $named_',
+    );
+    check(
+      !doc.rows('callable').any((r) => '${r['library']}'.contains('free')),
+      'a free package is not listed',
+    );
+  });
   test('inherited private host members are callable where they resolve', () {
     // Issue #17: riverpod 3 generates provider subclasses in the app, and
     // riverpod's ProviderContainer calls their inherited _addListener.

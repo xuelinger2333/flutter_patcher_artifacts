@@ -1,0 +1,258 @@
+diff --git a/runtime/vm/compiler/aot/aot_call_specializer.cc b/runtime/vm/compiler/aot/aot_call_specializer.cc
+index 79d106b52ab..ef6ccb82140 100644
+--- a/runtime/vm/compiler/aot/aot_call_specializer.cc
++++ b/runtime/vm/compiler/aot/aot_call_specializer.cc
+@@ -1234,6 +1234,17 @@ void AotCallSpecializer::ReplaceWithConditionalDispatchTableCall(
+     LoadClassIdInstr* load_cid,
+     const Function& interface_target,
+     const compiler::TableSelector* selector) {
++  auto dispatch_table_call = DispatchTableCallInstr::FromCall(
++      Z, call, new (Z) Value(load_cid), interface_target, selector);
++  ASSERT(dispatch_table_call->representation() == call->representation());
++  ReplaceWithConditionalCall(call, load_cid, dispatch_table_call);
++}
++
++// Replaces [call] with: cid of a precompiled class ? [fast_call] : [call].
++void AotCallSpecializer::ReplaceWithConditionalCall(
++    InstanceCallBaseInstr* call,
++    LoadClassIdInstr* load_cid,
++    Definition* dispatch_table_call) {
+   BlockEntryInstr* current_block = call->GetBlock();
+   const bool has_uses = call->HasUses();
+   const auto deopt_id = call->deopt_id();
+@@ -1243,6 +1254,9 @@ void AotCallSpecializer::ReplaceWithConditionalDispatchTableCall(
+       call->source(), new (Z) Value(load_cid), 0, num_cids - 1, kUnboxedUword);
+ 
+   BranchInstr* branch = new (Z) BranchInstr(compare, deopt_id);
++  // The branch may be folded by constant propagation, which copies its
++  // environment.
++  if (call->env() != nullptr) call->env()->DeepCopyTo(Z, branch);
+ 
+   TargetEntryInstr* true_target = new (Z) TargetEntryInstr(
+       flow_graph()->allocate_block_id(), current_block->try_index(), deopt_id);
+@@ -1255,6 +1269,11 @@ void AotCallSpecializer::ReplaceWithConditionalDispatchTableCall(
+   JoinEntryInstr* join = new (Z) JoinEntryInstr(
+       flow_graph()->allocate_block_id(), current_block->try_index(), deopt_id);
+ 
++  if (call->env() != nullptr) {
++    call->env()->DeepCopyTo(Z, true_target);
++    call->env()->DeepCopyTo(Z, false_target);
++    call->env()->DeepCopyTo(Z, join);
++  }
+   current_block->ReplaceAsPredecessorWith(join);
+ 
+   for (intptr_t i = 0, n = current_block->dominated_blocks().length(); i < n;
+@@ -1286,9 +1305,6 @@ void AotCallSpecializer::ReplaceWithConditionalDispatchTableCall(
+   false_target->LinkTo(false_goto);
+   false_target->set_last_instruction(false_goto);
+ 
+-  auto dispatch_table_call = DispatchTableCallInstr::FromCall(
+-      Z, call, new (Z) Value(load_cid), interface_target, selector);
+-  ASSERT(dispatch_table_call->representation() == call->representation());
+   InsertBefore(true_goto, dispatch_table_call, call->env(),
+                has_uses ? FlowGraph::kValue : FlowGraph::kEffect);
+ 
+@@ -1310,6 +1326,62 @@ void AotCallSpecializer::ReplaceWithConditionalDispatchTableCall(
+   }
+ }
+ 
++DEFINE_FLAG(bool,
++            guard_single_target_calls,
++            false,
++            "Call the only precompiled implementation of a member that a "
++            "dynamic module may override directly when the receiver is of "
++            "a precompiled class.");
++
++void AotCallSpecializer::GuardSingleTargetCalls() {
++  if (!FLAG_guard_single_target_calls) return;
++  if (!isolate_group()->has_dynamically_extendable_classes()) return;
++  ASSERT(current_iterator_ == nullptr);
++  const intptr_t max_block_id = flow_graph()->max_block_id();
++  for (BlockIterator block_it = flow_graph()->reverse_postorder_iterator();
++       !block_it.Done(); block_it.Advance()) {
++    ForwardInstructionIterator it(block_it.Current());
++    current_iterator_ = &it;
++    while (!it.Done()) {
++      Instruction* instr = it.Current();
++      if (!it.Done()) it.Advance();
++      InstanceCallInstr* call = instr->AsInstanceCall();
++      if (call == nullptr) continue;
++      const Function& interface_target = call->interface_target();
++      if (interface_target.IsNull()) continue;
++      {
++        // Already the slow path of an earlier guard.
++        BlockEntryInstr* block = call->GetBlock();
++        if (block->PredecessorCount() == 1) {
++          BranchInstr* branch =
++              block->PredecessorAt(0)->last_instruction()->AsBranch();
++          if (branch != nullptr && branch->condition()->IsTestRange()) {
++            continue;
++          }
++        }
++      }
++      const Function* target =
++          precompiler_->selector_map()->SingleTarget(interface_target);
++      if (target == nullptr || target->is_polymorphic_target()) continue;
++      Value* receiver = call->ArgumentValueAt(call->FirstArgIndex());
++      if (receiver->Type()->is_nullable()) continue;
++      if (call->CanReceiverBeSmiBasedOnInterfaceTarget(Z)) continue;
++      // A generic call passes its type arguments first; FromCall keeps them,
++      // and the target has the type parameters of the interface target.
++      auto load_cid = new (Z) LoadClassIdInstr(receiver->CopyWithType(Z),
++                                               kUnboxedUword, false);
++      InsertBefore(call, load_cid, call->env(), FlowGraph::kValue);
++      StaticCallInstr* fast =
++          StaticCallInstr::FromCall(Z, call, *target, call->CallCount());
++      ReplaceWithConditionalCall(call, load_cid, fast);
++    }
++    current_iterator_ = nullptr;
++  }
++  if (flow_graph()->max_block_id() != max_block_id) {
++    flow_graph()->DiscoverBlocks();
++  }
++}
++
+ #endif  // DART_PRECOMPILER
+ 
+ }  // namespace dart
+diff --git a/runtime/vm/compiler/aot/aot_call_specializer.h b/runtime/vm/compiler/aot/aot_call_specializer.h
+index 5daa93fea84..73d33eaa05d 100644
+--- a/runtime/vm/compiler/aot/aot_call_specializer.h
++++ b/runtime/vm/compiler/aot/aot_call_specializer.h
+@@ -83,6 +83,10 @@ class AotCallSpecializer : public CallSpecializer {
+                                            Value* right_value);
+ 
+   virtual void ReplaceInstanceCallsWithDispatchTableCalls();
++  virtual void GuardSingleTargetCalls();
++  void ReplaceWithConditionalCall(InstanceCallBaseInstr* call,
++                                  LoadClassIdInstr* load_cid,
++                                  Definition* fast_call);
+ 
+   Precompiler* precompiler_;
+ 
+diff --git a/runtime/vm/compiler/aot/dispatch_table_generator.cc b/runtime/vm/compiler/aot/dispatch_table_generator.cc
+index 1863badc37b..5a2e7cb6c90 100644
+--- a/runtime/vm/compiler/aot/dispatch_table_generator.cc
++++ b/runtime/vm/compiler/aot/dispatch_table_generator.cc
+@@ -386,6 +386,14 @@ const TableSelector* SelectorMap::GetSelector(int32_t sid) const {
+   return selector;
+ }
+ 
++const Function* SelectorMap::SingleTarget(
++    const Function& interface_target) const {
++  const int32_t sid = SelectorId(interface_target);
++  if (sid == kInvalidSelectorId) return nullptr;
++  const TableSelector& selector = selectors_[sid];
++  return selector.multiple_targets ? nullptr : selector.single_target;
++}
++
+ void SelectorMap::AddSelector(int32_t call_count,
+                               bool called_on_null,
+                               bool torn_off) {
+@@ -466,6 +474,12 @@ void DispatchTableGenerator::NumberSelectors() {
+             }
+             selector_map_.SetSelectorProperties(sid, on_null_interface,
+                                                 requires_args_descriptor);
++            TableSelector& selector = selector_map_.selectors_[sid];
++            if (selector.single_target == nullptr) {
++              selector.single_target = &Function::ZoneHandle(Z, function.ptr());
++            } else {
++              selector.multiple_targets = true;
++            }
+           }
+         }
+       }
+diff --git a/runtime/vm/compiler/aot/dispatch_table_generator.h b/runtime/vm/compiler/aot/dispatch_table_generator.h
+index 5e53c273dff..a96b7b6310b 100644
+--- a/runtime/vm/compiler/aot/dispatch_table_generator.h
++++ b/runtime/vm/compiler/aot/dispatch_table_generator.h
+@@ -51,6 +51,10 @@ struct TableSelector {
+   bool on_null_interface = false;
+   // Do any targets of this selector assume that an args descriptor is passed?
+   bool requires_args_descriptor = false;
++  // The only implementation of this selector among precompiled
++  // classes (nullptr when there is none or more than one).
++  const Function* single_target = nullptr;
++  bool multiple_targets = false;
+ };
+ 
+ class SelectorMap {
+@@ -63,6 +67,10 @@ class SelectorMap {
+ 
+   const TableSelector* GetSelector(int32_t sid) const;
+ 
++  // The only precompiled implementation of the selector of
++  // [interface_target], or nullptr.
++  const Function* SingleTarget(const Function& interface_target) const;
++
+  private:
+   static constexpr int32_t kInvalidSelectorId =
+       kernel::ProcedureAttributesMetadata::kInvalidSelectorId;
+diff --git a/runtime/vm/compiler/aot/precompiler.cc b/runtime/vm/compiler/aot/precompiler.cc
+index 9a2c8497073..fb2ee847043 100644
+--- a/runtime/vm/compiler/aot/precompiler.cc
++++ b/runtime/vm/compiler/aot/precompiler.cc
+@@ -74,6 +74,24 @@ DEFINE_FLAG(charp,
+             nullptr,
+             "Print layout of Dart objects to the given file");
+ DEFINE_FLAG(bool, trace_precompiler, false, "Trace precompiler.");
++DEFINE_FLAG(bool,
++            lazy_dyn_module_tearoffs,
++            false,
++            "A dynamic module pragma does not force a precompiled tear-off.");
++
++static bool HasVmEntryPointPragma(IsolateGroup* group, const Array& metadata) {
++  auto& pragma = Object::Handle();
++  auto& name = Object::Handle();
++  const auto& name_field = Field::Handle(group->object_store()->pragma_name());
++  for (intptr_t i = 0; i < metadata.Length(); i++) {
++    pragma = metadata.At(i);
++    if (pragma.clazz() != group->object_store()->pragma_class()) continue;
++    name = Instance::Cast(pragma).GetField(name_field);
++    if (name.ptr() == Symbols::vm_entry_point().ptr()) return true;
++  }
++  return false;
++}
++
+ DEFINE_FLAG(charp,
+             write_retained_reasons_to,
+             nullptr,
+@@ -1631,7 +1649,9 @@ void Precompiler::AddAnnotatedRoots() {
+             if (EntryPointPragmaUtils::AllowsCall(type)) {
+               mark_entry_point_method(function);
+             }
+-            if (EntryPointPragmaUtils::AllowsGet(type)) {
++            if (EntryPointPragmaUtils::AllowsGet(type) &&
++                (!FLAG_lazy_dyn_module_tearoffs ||
++                 HasVmEntryPointPragma(IG, metadata))) {
+               // Non-getter procedures use "get" to allow closurization.
+               function2 = function.ImplicitClosureFunction();
+               // Mark `function` as having an api use and not `function2`,
+diff --git a/runtime/vm/compiler/call_specializer.h b/runtime/vm/compiler/call_specializer.h
+index 881d502a76d..7a2432eb20b 100644
+--- a/runtime/vm/compiler/call_specializer.h
++++ b/runtime/vm/compiler/call_specializer.h
+@@ -54,6 +54,7 @@ class CallSpecializer : public FlowGraphVisitor {
+   void ApplyClassIds();
+ 
+   virtual void ReplaceInstanceCallsWithDispatchTableCalls();
++  virtual void GuardSingleTargetCalls() {}
+ 
+   void InsertBefore(Instruction* next,
+                     Instruction* instr,
+diff --git a/runtime/vm/compiler/compiler_pass.cc b/runtime/vm/compiler/compiler_pass.cc
+index 4f0a8c7214e..7999f4a5be9 100644
+--- a/runtime/vm/compiler/compiler_pass.cc
++++ b/runtime/vm/compiler/compiler_pass.cc
+@@ -370,7 +370,10 @@ COMPILER_PASS(ComputeSSA, {
+   flow_graph->ComputeSSA(nullptr);
+ });
+ 
+-COMPILER_PASS(ApplyICData, { state->call_specializer->ApplyICData(); });
++COMPILER_PASS(ApplyICData, {
++  state->call_specializer->ApplyICData();
++  state->call_specializer->GuardSingleTargetCalls();
++});
+ 
+ COMPILER_PASS(TryOptimizePatterns, { flow_graph->TryOptimizePatterns(); });
+ 

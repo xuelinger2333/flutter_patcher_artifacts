@@ -89,7 +89,8 @@ def check_patches(value):
                 and patch['file'].endswith('.patch')
                 and hex_value(patch.get('sha256'), 64), 'invalid patch record')
         names.append(patch['file'])
-    require(names == sorted(set(names)), 'patch order/duplicates invalid')
+    # In the order applied: the Dart checkout's, then the Flutter monorepo's.
+    require(len(names) == len(set(names)), 'duplicate patches')
 
 
 def check_host_patches(value):

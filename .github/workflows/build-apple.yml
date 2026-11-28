@@ -65,6 +65,11 @@ jobs:
           test -d "$xcode"
           echo "FLUTTER_PATCHER_XCODE=$xcode" >> "$GITHUB_ENV"
           echo "FLUTTER_PATCHER_BUILD_JOBS=$(sysctl -n hw.ncpu)" >> "$GITHUB_ENV"
+      - name: Install the Metal toolchain (Xcode 26 ships it separately; the 3.50 engine compiles its shaders with it)
+        run: |
+          export DEVELOPER_DIR="$FLUTTER_PATCHER_XCODE/Contents/Developer"
+          xcrun metal --version || xcodebuild -downloadComponent MetalToolchain
+          xcrun metal --version
       - name: Test pipeline assertions
         run: python3 -m unittest discover -s engine/scripts/test -v
       - name: Build the iOS engine

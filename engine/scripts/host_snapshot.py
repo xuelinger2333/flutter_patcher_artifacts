@@ -85,7 +85,8 @@ class Pipeline:
         self.log.flush()
         sys.stdout.flush()
         require(process.wait() == 0, f'command failed ({process.returncode}): {command[0]}')
-        return ''.join(output).strip()
+        # A diff may end in a blank context line; its space is part of the patch.
+        return ''.join(output).strip('\n')
 
     def git(self, path, *args):
         return self.run('git', '-C', path, *args, capture=True)

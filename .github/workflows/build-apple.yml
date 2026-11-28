@@ -1,0 +1,90 @@
+name: Build iOS engine and macOS gen_snapshot
+
+# Hosted macOS runner: per Flutter version, one job builds the engine-ios
+# release and the macos-arm64 gen_snapshot bundle from one engine checkout and
+# keeps both as workflow artifacts. Attaching the bundle to the Android
+# release and publishing stay with the maintainer.
+
+on:
+  workflow_dispatch:
+    inputs:
+      flutter_version:
+        description: Flutter stable version, a comma-separated list, or all for supported_versions.txt
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  versions:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.select.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - id: select
+        env:
+          REQUESTED_VERSION: ${{ inputs.flutter_version }}
+        run: |
+          python3 - <<'PY'
+          import json, os, pathlib, re
+          versions = pathlib.Path('supported_versions.txt').read_text().splitlines()
+          assert versions and len(versions) == len(set(versions))
+          assert all(re.fullmatch(r'\d+\.\d+\.\d+', v) for v in versions)
+          requested = os.environ['REQUESTED_VERSION']
+          selected = versions if requested == 'all' else [v.strip() for v in requested.split(',')]
+          assert len(selected) == len(set(selected)), 'Duplicate Flutter version'
+          assert all(v in versions for v in selected), 'Unsupported Flutter version'
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write('matrix=' + json.dumps({'flutter_version': selected}) + '\n')
+          PY
+
+  build:
+    needs: versions
+    runs-on: macos-15
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.versions.outputs.matrix) }}
+    env:
+      FLUTTER_VERSION: ${{ matrix.flutter_version }}
+      FLUTTER_PATCHER_ENGINE_HOME: /Users/runner/fpe
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Select Xcode 26 (the 3.47 engine's lld rejects Xcode 27 SDK stubs)
+        run: |
+          df -h /
+          sysctl -n hw.ncpu hw.memsize
+          ls -d /Applications/Xcode*.app
+          xcode="$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1)"
+          test -d "$xcode"
+          echo "FLUTTER_PATCHER_XCODE=$xcode" >> "$GITHUB_ENV"
+          echo "FLUTTER_PATCHER_BUILD_JOBS=$(sysctl -n hw.ncpu)" >> "$GITHUB_ENV"
+      - name: Test pipeline assertions
+        run: python3 -m unittest discover -s engine/scripts/test -v
+      - name: Build the iOS engine
+        run: python3 engine/scripts/ios_engine.py build "$FLUTTER_VERSION" --out "$RUNNER_TEMP/engine-ios"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: engine-ios-${{ matrix.flutter_version }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/engine-ios
+          if-no-files-found: error
+          retention-days: 14
+      - name: Build the macOS gen_snapshot
+        run: |
+          df -h /
+          python3 engine/scripts/host_snapshot.py build "$FLUTTER_VERSION" --out "$RUNNER_TEMP/gen-snapshot"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: gen-snapshot-macos-arm64-${{ matrix.flutter_version }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/gen-snapshot
+          if-no-files-found: error
+          retention-days: 14
+      - name: Disk left
+        if: always()
+        run: df -h /
